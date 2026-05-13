@@ -1,0 +1,35 @@
+# Living-room PC — desk monitor + TV.
+# Copy to ~/.config/easy-switch/config.toml on the target host, then edit.
+#
+# audio_only_fallback=true means: if the required display isn't connected,
+# still switch the audio sink. Useful when you want headphones/speakers
+# active even with no monitor attached.
+
+[modes.desk]
+description = "Desk monitor + Pebble Pro speakers"
+requires_any = ["DP-1"]
+strict = true
+audio = "alsa_output.usb-Creative_Technology_Ltd_Creative_Pebble_Pro_MF1710-01.analog-stereo"
+audio_only_fallback = true
+
+[modes.desk.outputs.DP-1]
+enable = true
+primary = true
+
+[modes.desk.outputs.HDMI-A-1]
+enable = false
+
+
+[modes.tv]
+description = "TV + TV audio"
+requires_any = ["HDMI-A-1"]
+strict = true
+audio = "alsa_output.pci-0000_08_00.1.pro-output-7"
+audio_only_fallback = true
+
+[modes.tv.outputs.HDMI-A-1]
+enable = true
+primary = true
+
+[modes.tv.outputs.DP-1]
+enable = false
