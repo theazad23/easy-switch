@@ -132,10 +132,6 @@ Repeat per mode.
 
 **Avoid `Ctrl+Alt+<arrow>` keys** — every direction is bound by default in Plasma (workspace navigation, activity switching, or kwin tiling), so your custom shortcut never fires. Combos that are reliably free: `Meta+Alt+<arrow>`, `Meta+Shift+<letter>`, `Meta+<F-key>`. If a shortcut you've defined doesn't fire, delete it and re-add it from scratch — Plasma's shortcut daemon occasionally gets stuck mid-registration.
 
-## Legacy scripts
-
-The original per-host bash scripts in [basement/](basement/) and [living-room/](living-room/) still work and are kept for reference — the example TOML configs reproduce their behavior exactly. Migrate your shortcuts to the CLI when you're ready, then delete those folders.
-
 ## License
 
 [MIT](LICENSE). Use it, fork it, ship it.
