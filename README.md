@@ -135,3 +135,7 @@ Repeat per mode.
 ## Legacy scripts
 
 The original per-host bash scripts in [basement/](basement/) and [living-room/](living-room/) still work and are kept for reference — the example TOML configs reproduce their behavior exactly. Migrate your shortcuts to the CLI when you're ready, then delete those folders.
+
+## License
+
+[MIT](LICENSE). Use it, fork it, ship it.
