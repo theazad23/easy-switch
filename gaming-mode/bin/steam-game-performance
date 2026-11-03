@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Automatic CachyOS game-performance for every Steam game, no launch options needed.
+# While any Steam game is running (Steam's "reaper SteamLaunch AppId=..." process),
+# hold the performance power profile and block idle/sleep -- the same thing
+# `game-performance %command%` does per game. Released when the last game exits.
+hold=
+release() { [ -n "$hold" ] && kill "$hold" 2>/dev/null; hold=; }
+trap 'release; exit 0' TERM INT
+
+while true; do
+    if pgrep -f 'reaper SteamLaunch AppId=' >/dev/null; then
+        if [ -z "$hold" ] || ! kill -0 "$hold" 2>/dev/null; then
+            systemd-inhibit --why "Steam game running" \
+                powerprofilesctl launch -p performance -r "Steam game running" -- sleep infinity &
+            hold=$!
+            echo "game started: holding performance profile"
+        fi
+    elif [ -n "$hold" ]; then
+        release
+        echo "no games running: released performance profile"
+    fi
+    sleep 3
+done

@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Easy Switch restore
+Comment=Re-apply the display mode chosen in Gaming Mode
+Exec=sh -c '@HOME@/.local/bin/easy-switch --restore; @HOME@/.local/bin/easy-switch --sync'
+X-KDE-autostart-phase=2
+NoDisplay=true

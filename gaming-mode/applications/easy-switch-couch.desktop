@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Switch to TV
+Comment=easy-switch couch
+Exec=@HOME@/.local/bin/easy-switch couch
+Icon=video-television
+Terminal=false

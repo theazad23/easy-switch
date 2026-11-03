@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Restart Gaming Mode
+Comment=Restart Gaming Mode on the same screen (fixes a torn picture)
+Exec=@HOME@/.local/bin/easy-switch --restart-gaming-mode
+Icon=view-refresh
+Terminal=false

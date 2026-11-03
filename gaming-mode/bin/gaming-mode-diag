@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# Snapshot display state for each Gaming Mode start, to compare torn vs clean sessions.
+# Started by gaming-mode-diag.service (WantedBy=gamescope-session.target).
+#   logs:   ~/.local/state/gaming-mode-diag/<start-time>.log
+#   index:  ~/.local/state/gaming-mode-diag/index.log   (one line per session + marks)
+# Mark a session:  gaming-mode-diag mark bad|good ["note"]   (marks the newest session)
+dir="${XDG_STATE_HOME:-$HOME/.local/state}/gaming-mode-diag"
+mkdir -p "$dir"
+
+if [ "$1" = mark ]; then
+    latest=$(ls -1t "$dir"/2*.log 2>/dev/null | head -1)
+    [ -n "$latest" ] || { echo "no sessions logged yet" >&2; exit 1; }
+    line="$(date +%T) MARK $2 ${3:-} -> $(basename "$latest")"
+    echo "$line" >> "$latest"; echo "$line" >> "$dir/index.log"; echo "$line"
+    exit 0
+fi
+
+start_epoch=$(date +%s)
+start_iso=$(date '+%F %T')
+log="$dir/$(date +%Y%m%d-%H%M%S).log"
+connector=$(sed -n 's/^OUTPUT_CONNECTOR=\([^,]*\).*/\1/p' "${XDG_CONFIG_HOME:-$HOME/.config}/easy-switch/gamescope.env" 2>/dev/null)
+
+props() {   # connector properties as the driver currently has them
+    modetest -M nvidia-drm -c 2>/dev/null | awk -v c="$1" '$0 ~ c {f=1} f && /^[0-9]+\t/ && $0 !~ c {f=0} f' \
+        | awk '/^\t[0-9]+ [^:]+:$/ {sub(/^\t[0-9]+ /,""); name=$0; next}
+               /^\t\tvalue:/ && name ~ /Colorspace|HDR_OUTPUT_METADATA|dithering|vrr_capable|link-status|DPMS/ {
+                   v=$0; sub(/^\t\tvalue:/,"",v); printf "  %s %s\n", name, (v==""?"(blob)":v); blob=(v==""); if(!blob) name=""; next}
+               blob && /^\t\t\t[0-9a-f]+$/ {printf "    %s\n", $1; next}
+               blob && !/^\t\t\t/ {blob=0; name=""}'
+}
+snap() {   # snap <label> <tag>
+    echo "=== snapshot +$(( $(date +%s) - start_epoch ))s ($1) ==="
+    echo "-- connectors (enabled):"; for d in /sys/class/drm/card*-*; do printf '  %s %s %s\n' "${d##*/}" "$(cat "$d/status")" "$(cat "$d/enabled")"; done
+    [ -n "$connector" ] && { echo "-- $connector properties:"; props "$connector"; }
+    echo "-- active CRTC modes:"; modetest -M nvidia-drm -p 2>/dev/null | awk '/^CRTCs:/{f=1} /^Planes:/{f=0} f' | grep -E "^[0-9]|#[0-9]" | head -6
+    # What gamescope itself composited: torn here = gamescope rendering; clean here
+    # while the TV is torn = scanout/driver side.
+    shot="${log%.log}-$2.png"
+    if [ -n "$GAMESCOPE_WAYLAND_DISPLAY" ] && gamescopectl screenshot "$shot" >/dev/null 2>&1; then
+        sleep 1; [ -s "$shot" ] && echo "-- screenshot: $shot" || echo "-- screenshot: requested, not written"
+    else
+        echo "-- screenshot: gamescopectl failed"
+    fi
+    echo "-- kernel HDMI infoframes / errors since start:"
+    journalctl -k --since "$start_iso" --no-pager -o short-precise 2>/dev/null | grep -iE "infoframe|nvidia|drm|segfault" | grep -v UFW | tail -15
+}
+
+echo "$(date -d "@$start_epoch" '+%F %T') session $(basename "$log") screen=${connector:-?}" >> "$dir/index.log"
+{
+    echo "Gaming Mode session $(date)"
+    echo "screen: ${connector:-?}  easy-switch mode: $(cat "${XDG_STATE_HOME:-$HOME/.local/state}/easy-switch/last-mode" 2>/dev/null)"
+    echo "gamescope: $(pacman -Q gamescope 2>/dev/null)   nvidia: $(grep -m1 -oE '[0-9]{3}\.[0-9]+\.[0-9]+' /proc/driver/nvidia/version)"
+    echo "kernel: $(uname -r)   steam channel: $(cat ~/.local/share/Steam/package/beta 2>/dev/null)"
+    gs=$(pgrep -o -f '^/usr/bin/gamescope ')
+    echo "gamescope cmdline: $( [ -n "$gs" ] && tr '\0' ' ' < /proc/$gs/cmdline || echo '(not running)')"
+    sleep 2; snap "gamescope up" 02s
+    sleep 3; snap "steam starting" 05s
+    sleep 5; snap "steam UI up" 10s
+    # burst: 8 extra screenshots ~0.25s apart, in case the corruption flickers
+    for b in 1 2 3 4 5 6 7 8; do gamescopectl screenshot "${log%.log}-burst$b.png" >/dev/null 2>&1; sleep 0.25; done
+    echo "-- burst screenshots: $(ls "${log%.log}"-burst*.png 2>/dev/null | wc -l) written"
+    sleep 20; snap "settled" 30s
+    echo "=== gamescope log for this session (filtered) ==="
+    journalctl --user --since "$start_iso" --no-pager -o short-precise -u gamescope-session.service \
+        | grep -vE "xkbcomp|keycode|modifier|> |redefined|scriptmgr: (Loading|Running)|colorimetry|vulkan:   " | head -150
+} > "$log" 2>&1
+

@@ -1,0 +1,16 @@
+#!/bin/sh
+# Runs when Gaming Mode (gamescope-session.service) stops. Decides where the next
+# login goes. While Gaming Mode runs, the login manager is left pointing at it, so:
+#   - PC rebooting/shutting down -> leave it: boot comes back into Gaming Mode
+#   - easy-switch screen change  -> leave it: relog straight back on the new screen
+#   - anything else (crash, Steam quit, "Switch to Desktop") -> back to Plasma,
+#     so a broken Gaming Mode can never loop
+flag="$XDG_RUNTIME_DIR/easy-switch-gamescope-restart"
+if [ -e "$flag" ]; then
+    rm -f "$flag"
+    exit 0
+fi
+case "$(systemctl is-system-running 2>/dev/null)" in
+    stopping) exit 0 ;;
+esac
+exec /usr/bin/pkexec /usr/lib/steamos/steam-set-session plasma.desktop

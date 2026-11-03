@@ -1,0 +1,52 @@
+#!/usr/bin/env python3
+"""
+Strip per-game launch-option boilerplate that's now handled globally:
+  - `game-performance`            -> steam-game-performance.service does it for every game
+  - `PROTON_ENABLE_WAYLAND=0`     -> already the default in ~/.config/environment.d/gaming.conf
+  - `gamescope ... --` wrappers   -> Gaming Mode already runs games inside gamescope
+Leaves real per-game settings (e.g. -nolauncher, VKD3D_CONFIG=...) alone. A bare
+`%command%` is cleared. Dry run by default; --apply writes (Steam MUST be closed).
+"""
+import glob, os, re, shutil, subprocess, sys, time
+import vdf
+
+APPLY = "--apply" in sys.argv
+
+def clean(lo: str) -> str:
+    s = re.sub(r"(^|\s)gamescope\s.*?\s--(?=\s)", r"\1", lo)   # gamescope <args> --
+    s = re.sub(r"(^|\s)game-performance(?=\s|$)", r"\1", s)
+    s = re.sub(r"(^|\s)PROTON_ENABLE_WAYLAND=0(?=\s|$)", r"\1", s)
+    s = " ".join(s.split())
+    return "" if s == "%command%" else s
+
+if APPLY and subprocess.run(["pgrep", "-x", "steam"], stdout=subprocess.DEVNULL).returncode == 0:
+    sys.exit("Steam is running. Close it (Steam menu -> Exit) and try again.")
+
+for path in glob.glob(os.path.expanduser("~/.steam/steam/userdata/*/config/localconfig.vdf")):
+    with open(path, encoding="utf-8") as f:
+        cfg = vdf.load(f)
+    apps = cfg["UserLocalConfigStore"]["Software"]["Valve"]["Steam"]["apps"]
+    cleared = kept = 0
+    for aid, app in apps.items():
+        if not isinstance(app, dict) or not app.get("LaunchOptions"):
+            continue
+        old = app["LaunchOptions"]; new = clean(old)
+        if new == old:
+            continue
+        if new:
+            print(f"  {aid:>8}: {old!r}\n  {'':>8}  -> {new!r}")
+            kept += 1
+        else:
+            cleared += 1
+        if APPLY:
+            if new: app["LaunchOptions"] = new
+            else: del app["LaunchOptions"]
+    print(f"{path}: {cleared} cleared to empty, {kept} trimmed (shown above)")
+    if APPLY:
+        backup = f"{path}.bak-{time.strftime('%Y%m%d-%H%M%S')}"
+        shutil.copy2(path, backup)
+        with open(path, "w", encoding="utf-8") as f:
+            vdf.dump(cfg, f, pretty=True)
+        print(f"written (backup: {backup})")
+if not APPLY:
+    print("dry run -- re-run with --apply while Steam is closed")

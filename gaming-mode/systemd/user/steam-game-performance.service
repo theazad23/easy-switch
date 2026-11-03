@@ -1,0 +1,9 @@
+[Unit]
+Description=Performance power profile while any Steam game runs
+
+[Service]
+ExecStart=@HOME@/.local/bin/steam-game-performance
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

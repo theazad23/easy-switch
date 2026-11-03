@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Return to Gaming Mode
+Comment=Log out and start Steam Big Picture (gamescope session)
+Exec=sh -c '@HOME@/.local/bin/easy-switch --sync; steamos-session-select gamescope'
+Icon=steam
+Terminal=false

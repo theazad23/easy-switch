@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Switch to Desk Monitor
+Comment=easy-switch desk
+Exec=@HOME@/.local/bin/easy-switch desk
+Icon=video-display
+Terminal=false

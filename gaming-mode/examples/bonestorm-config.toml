@@ -1,0 +1,37 @@
+# easy-switch config for host bonestorm — generated 2026-05-13
+
+# Gaming Mode only: restart it on the same screen (e.g. torn picture)
+restart_hotkey = "ctrl+alt+r"
+
+[modes.desk]
+requires_any = ["DP-3"]
+strict = true
+audio = "alsa_output.usb-SteelSeries_Arctis_Nova_Pro_Wireless-00.analog-stereo"
+mangohud = "desk.conf"
+gamescope_output = "DP-3"
+hotkey = "ctrl+alt+up"
+
+[modes.desk.outputs.DP-3]
+enable = true
+primary = true
+mode = "2560x1440@165"
+
+[modes.desk.outputs.HDMI-A-1]
+enable = false
+
+[modes.couch]
+description = "basement tv"
+requires_any = ["HDMI-A-1"]
+strict = true
+audio = "alsa_output.pci-0000_01_00.1.hdmi-stereo"
+mangohud = "couch.conf"
+gamescope_output = "HDMI-A-1"
+hotkey = "ctrl+alt+down"
+
+[modes.couch.outputs.DP-3]
+enable = false
+
+[modes.couch.outputs.HDMI-A-1]
+enable = true
+primary = true
+mode = "3840x2160@60"

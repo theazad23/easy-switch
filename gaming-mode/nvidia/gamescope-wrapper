@@ -1,0 +1,6 @@
+#!/bin/sh
+# Gaming Mode on NVIDIA: always composite in gamescope instead of handing
+# separate layers / direct scan-out to the driver. Without this the TV showed
+# torn, offset, miscoloured blocks (Steam UI and game layers mis-merged).
+# Put first in PATH by the gamescope-session.service drop-in.
+exec /usr/bin/gamescope --force-composition "$@"

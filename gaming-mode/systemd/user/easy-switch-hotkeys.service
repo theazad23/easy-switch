@@ -1,0 +1,16 @@
+[Unit]
+Description=easy-switch screen hotkeys for Gaming Mode
+# Only in the gamescope session; on the desktop KDE's own shortcuts handle these keys
+PartOf=gamescope-session.target
+After=gamescope-session.service
+ConditionPathExists=%t/gamescope-environment
+
+[Service]
+EnvironmentFile=%t/gamescope-environment
+Environment=PYTHONUNBUFFERED=1
+ExecStart=@HOME@/.local/bin/easy-switch --watch-hotkeys
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=gamescope-session.target

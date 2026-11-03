@@ -1,0 +1,13 @@
+[Unit]
+Description=Log display state for each Gaming Mode start (torn-screen debugging)
+PartOf=gamescope-session.target
+After=gamescope-session.service
+
+[Service]
+Type=exec
+# gamescope socket etc. (written by the session once gamescope is up)
+EnvironmentFile=%t/gamescope-environment
+ExecStart=@HOME@/.local/bin/gaming-mode-diag
+
+[Install]
+WantedBy=gamescope-session.target

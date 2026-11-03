@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Repeatedly enter Gaming Mode so torn/clean starts can be watched and reported.
+#   gaming-mode-cycle [rounds=5] [seconds-per-round=25]
+# Run from the desktop. Each round is numbered in the diag index
+# (~/.local/state/gaming-mode-diag/index.log) so "3 bad" maps to a log.
+# After the last round it returns to the desktop.
+rounds=${1:-5}; hold=${2:-25}
+idx="${XDG_STATE_HOME:-$HOME/.local/state}/gaming-mode-diag/index.log"
+flag="$XDG_RUNTIME_DIR/easy-switch-gamescope-restart"
+active() { systemctl --user is-active --quiet gamescope-session.service; }
+wait_for() {  # wait_for up|down <timeout>
+    for _ in $(seq 1 "$2"); do
+        if [ "$1" = up ]; then active && return 0; else active || return 0; fi
+        sleep 1
+    done
+    return 1
+}
+
+# Detach from the desktop session: it gets logged out on the first switch.
+if [ -z "$GAMING_MODE_CYCLE_DETACHED" ]; then
+    exec systemd-run --user --collect --unit="gaming-mode-cycle-$(date +%H%M%S)" \
+        --setenv=GAMING_MODE_CYCLE_DETACHED=1 --setenv=XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" \
+        "$(readlink -f "$0")" "$rounds" "$hold"
+fi
+
+echo "$(date '+%F %T') CYCLE start: $rounds rounds x ${hold}s" >> "$idx"
+active || steamos-session-select gamescope
+for i in $(seq 1 "$rounds"); do
+    if ! wait_for up 120; then echo "$(date '+%F %T') CYCLE round $i: Gaming Mode never started, stopping" >> "$idx"; exit 1; fi
+    echo "$(date '+%F %T') CYCLE round $i of $rounds" >> "$idx"
+    sleep "$hold"
+    [ "$i" -lt "$rounds" ] && touch "$flag"   # relog straight back into Gaming Mode
+    systemctl --user --no-block stop gamescope-session.target
+    wait_for down 60
+done
+echo "$(date '+%F %T') CYCLE done" >> "$idx"

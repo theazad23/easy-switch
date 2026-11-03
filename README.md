@@ -75,6 +75,14 @@ Each mode is a `[modes.<name>]` table in `~/.config/easy-switch/config.toml`:
 | `strict` | If `true`, any currently-connected output **not** listed under `outputs` is disabled. Set by default by `easy-switch add`. Without it, a display plugged in after the snapshot was taken would stay on. |
 | `audio` | `pactl` sink name to switch to. |
 | `audio_only_fallback` | If `true` and `requires_any` is unmet, still switch audio. |
+| `mangohud` | Profile file (relative to `~/.config/MangoHud/`, or absolute). On a successful display apply, `~/.config/MangoHud/MangoHud.conf` is symlinked to it, so the next game launch picks up that mode's FPS cap and the choice survives reboots. |
+| `gamescope_output` | Connector Gaming Mode (SteamOS-style gamescope session) should use for this mode, e.g. `HDMI-A-1`. Written to `~/.config/easy-switch/gamescope.env` for a `gamescope-session.service` drop-in (`EnvironmentFile=`). Running `easy-switch <mode>` *inside* Gaming Mode switches screen by restarting the session; `easy-switch --restore` at Plasma login then re-applies the mode's KDE layout. |
+
+`easy-switch --sync` records whichever mode matches the screens that are currently on (primary enabled, disabled outputs off, read from DRM sysfs) without touching displays or audio. Run it at login and before entering Gaming Mode so the remembered mode always follows the real screen.
+
+`hotkey = "ctrl+alt+down"` (per mode) is used by `easy-switch --watch-hotkeys`, a read-only evdev listener meant to run as a user service inside Gaming Mode, where KDE global shortcuts don't exist. It doesn't grab the keyboard, so keys still reach the game. Steam Input's virtual keyboard counts too, so a Steam-button chord bound to the same keys switches screens in both sessions. Needs `python-evdev` and membership in the `input` group.
+
+A top-level `restart_hotkey = "ctrl+alt+r"` adds one more watched combo that runs `easy-switch --restart-gaming-mode`: restart the gamescope session on the same screen (it relogs straight back into Gaming Mode). Useful for clearing a display glitch without leaving Gaming Mode.
 | `outputs.<NAME>` | Per-output settings (see below). |
 
 Per-output keys (all optional except `enable`):
@@ -118,6 +126,10 @@ enable = false
 ```
 
 Full starter configs for two real setups: [examples/basement.toml](examples/basement.toml), [examples/living-room.toml](examples/living-room.toml).
+
+## Gaming Mode
+
+easy-switch also drives a SteamOS-style Gaming Mode (gamescope session): per-mode screen selection, hotkeys inside Gaming Mode, and seamless desktop ↔ Gaming Mode switching. Setup, host files, and lessons learned: [GAMING-MODE.md](GAMING-MODE.md) and [gaming-mode/](gaming-mode/).
 
 ## KDE keyboard shortcuts
 

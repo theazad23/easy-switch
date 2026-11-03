@@ -1,0 +1,15 @@
+[Unit]
+Description=Steam
+After=graphical-session.target
+# Stop with the Plasma session so it never lingers into Gaming Mode
+PartOf=graphical-session.target
+# Gaming Mode starts its own Steam (steam-launcher.service)
+ConditionPathExists=!%t/gamescope-environment
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/steam -silent -steamdeck
+Restart=no
+
+[Install]
+WantedBy=graphical-session.target

@@ -29,6 +29,23 @@ STARRED_MODE_RE = re.compile(r"\d+:(\d+x\d+)@(\d+(?:\.\d+)?)\*")
 GEOMETRY_RE = re.compile(r"Geometry:\s+(-?\d+,-?\d+)\s+(\d+x\d+)")
 ROTATION_KEYWORD = {1: "normal", 2: "left", 4: "inverted", 8: "right"}
 NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+MANGOHUD_DIR = (
+    Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "MangoHud"
+)
+STATE_DIR = (
+    Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state")
+    / "easy-switch"
+)
+LAST_MODE_FILE = STATE_DIR / "last-mode"
+# Set when a mode is applied inside Gaming Mode, where KDE's layout can't be
+# touched; the next Plasma login re-applies the mode via `--restore`.
+PENDING_PLASMA_FILE = STATE_DIR / "pending-plasma"
+# Read by the gamescope-session.service drop-in (EnvironmentFile=).
+GAMESCOPE_ENV_FILE = (
+    Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+    / "easy-switch"
+    / "gamescope.env"
+)
 
 
 def die(msg: str, code: int = 1) -> None:
@@ -183,6 +200,113 @@ def set_audio(sink: str) -> None:
 # ---------------------------------------------------------------------------
 # Apply
 # ---------------------------------------------------------------------------
+
+
+def set_mangohud(profile: str) -> None:
+    """Point MangoHud.conf at this mode's profile. MangoHud re-reads it on every
+    game launch and the symlink survives reboots, so the last mode sticks."""
+    target = MANGOHUD_DIR / Path(profile).expanduser()
+    if not target.is_file():
+        raise FileNotFoundError(f"MangoHud profile {target} doesn't exist")
+    link = MANGOHUD_DIR / "MangoHud.conf"
+    if link.exists() and not link.is_symlink():
+        raise FileExistsError(f"{link} is a regular file; move it aside first")
+    tmp = link.with_name(".MangoHud.conf.tmp")
+    tmp.unlink(missing_ok=True)
+    tmp.symlink_to(target)
+    os.replace(tmp, link)  # atomic swap so a game launching mid-switch never sees no config
+
+
+def in_gaming_mode() -> bool:
+    """True inside the SteamOS-style gamescope session. The session writes this
+    file once gamescope is up and removes it on exit (same check upstream uses)."""
+    runtime = os.environ.get("XDG_RUNTIME_DIR")
+    return bool(runtime) and (Path(runtime) / "gamescope-environment").exists()
+
+
+def read_gamescope_output() -> str | None:
+    try:
+        for line in GAMESCOPE_ENV_FILE.read_text().splitlines():
+            if line.startswith("OUTPUT_CONNECTOR="):
+                return line.split("=", 1)[1]
+    except OSError:
+        pass
+    return None
+
+
+def remember_mode(name: str, mode_cfg: dict[str, Any]) -> None:
+    """Record the last applied mode and which screen Gaming Mode should use."""
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    LAST_MODE_FILE.write_text(name + "\n")
+    output = mode_cfg.get("gamescope_output")
+    if output:
+        GAMESCOPE_ENV_FILE.parent.mkdir(parents=True, exist_ok=True)
+        # Trailing "*" lets gamescope fall back to any screen if this one is gone.
+        GAMESCOPE_ENV_FILE.write_text(f"OUTPUT_CONNECTOR={output},*\n")
+
+
+def restart_gaming_mode(reason: str) -> int:
+    """Restart the gamescope session on the same screen (e.g. to clear a torn
+    picture). The flag tells the host's session-stop hook to relog into Gaming
+    Mode instead of falling back to Plasma."""
+    if not in_gaming_mode():
+        print("easy-switch: not in Gaming Mode; nothing to restart", file=sys.stderr)
+        return 2
+    runtime = os.environ.get("XDG_RUNTIME_DIR")
+    if runtime:
+        (Path(runtime) / "easy-switch-gamescope-restart").touch()
+    notify("Restarting Gaming Mode", reason)
+    # --no-block queues the stop in systemd, so it completes even though
+    # this process is a child of the session and dies with it.
+    run(["systemctl", "--user", "--no-block", "stop", "gamescope-session.target"], check=False)
+    return 0
+
+
+def apply_mode_gaming(name: str, mode_cfg: dict[str, Any], dry_run: bool) -> int:
+    """Apply a mode from inside Gaming Mode. gamescope owns the displays, so
+    instead of kscreen we point it at the mode's screen and restart the session
+    (the login manager relogs straight back into Gaming Mode)."""
+    pretty = mode_cfg.get("description") or name
+    failed_title = f"Couldn't switch to {pretty}"
+    output = mode_cfg.get("gamescope_output")
+    if not output:
+        msg = f"mode '{name}' has no gamescope_output, so Gaming Mode can't use it"
+        print(f"easy-switch: {msg}", file=sys.stderr)
+        if not dry_run:
+            notify(failed_title, msg, urgency="critical", icon="dialog-error")
+        return 2
+    if drm_attr(output, "status") != "connected":
+        msg = f"{output} isn't connected. No changes were made."
+        print(f"easy-switch: {msg}", file=sys.stderr)
+        if not dry_run:
+            notify(failed_title, msg, urgency="critical", icon="dialog-error")
+        return 2
+
+    restart = read_gamescope_output() != f"{output},*"
+    if dry_run:
+        print(f"would write: {GAMESCOPE_ENV_FILE}: OUTPUT_CONNECTOR={output},*")
+        if mode_cfg.get("audio"):
+            print(f"would run: pactl set-default-sink {mode_cfg['audio']}")
+        if restart:
+            print("would run: systemctl --user --no-block stop gamescope-session.target")
+        return 0
+
+    # Non-fatal: the screen switch is what matters here.
+    try:
+        if mode_cfg.get("mangohud"):
+            set_mangohud(mode_cfg["mangohud"])
+        if mode_cfg.get("audio"):
+            set_audio(mode_cfg["audio"])
+    except (OSError, subprocess.CalledProcessError) as e:
+        print(f"easy-switch: {e}", file=sys.stderr)
+    remember_mode(name, mode_cfg)
+    PENDING_PLASMA_FILE.touch()
+
+    if restart:
+        restart_gaming_mode(f"Steam will restart on {pretty}.")
+    else:
+        notify(f"Switched to {pretty}", mode_cfg.get("description", ""))
+    return 0
 
 
 def expected_primary(mode_cfg: dict[str, Any]) -> str | None:
@@ -408,7 +532,23 @@ def apply_mode(name: str, mode_cfg: dict[str, Any], dry_run: bool) -> int:
             else:
                 time.sleep(KSCREEN_SETTLE_SECONDS)
 
-    # 5. Audio only after a successful display apply.
+    # 5. MangoHud profile and audio only after a successful display apply.
+    mangohud = mode_cfg.get("mangohud")
+    if mangohud:
+        if dry_run:
+            print(f"would link: {MANGOHUD_DIR / 'MangoHud.conf'} -> {mangohud}")
+        else:
+            try:
+                set_mangohud(mangohud)
+            except OSError as e:
+                notify(
+                    partial_title,
+                    f"Displays updated, but couldn't switch MangoHud profile: {e}",
+                    urgency="normal",
+                    icon="dialog-warning",
+                )
+                return 2
+
     if audio:
         if dry_run:
             print(f"would run: pactl set-default-sink {audio}")
@@ -425,6 +565,7 @@ def apply_mode(name: str, mode_cfg: dict[str, Any], dry_run: bool) -> int:
                 return 2
 
     if not dry_run:
+        remember_mode(name, mode_cfg)
         notify(
             f"Switched to {pretty}",
             mode_cfg.get("description", ""),
@@ -432,6 +573,175 @@ def apply_mode(name: str, mode_cfg: dict[str, Any], dry_run: bool) -> int:
             icon="preferences-desktop-display",
         )
     return 0
+
+
+def detect_active_mode(config: dict[str, Any]) -> str | None:
+    """Which configured mode matches the screens that are actually on right now:
+    its primary output is enabled and every output it disables is off. Reads DRM
+    sysfs, so it works without a display connection."""
+    for name, mode_cfg in config.get("modes", {}).items():
+        primary = expected_primary(mode_cfg)
+        if not primary or drm_attr(primary, "enabled") != "enabled":
+            continue
+        if any(
+            drm_attr(o, "enabled") == "enabled"
+            for o, ocfg in mode_cfg.get("outputs", {}).items()
+            if ocfg.get("enable") is False
+        ):
+            continue
+        return name
+    return None
+
+
+def cmd_sync(config: dict[str, Any], dry_run: bool) -> int:
+    """Make the recorded mode (Gaming Mode screen, MangoHud profile) match the
+    screen that's on, e.g. after KDE restored a layout at login. Audio and the
+    display layout are left alone."""
+    name = detect_active_mode(config)
+    if name is None:
+        print("easy-switch: current screens don't match any mode — nothing recorded")
+        return 0
+    mode_cfg = config["modes"][name]
+    if dry_run:
+        print(f"would record mode: {name}")
+        return 0
+    if mode_cfg.get("mangohud"):
+        try:
+            set_mangohud(mode_cfg["mangohud"])
+        except OSError as e:
+            print(f"easy-switch: {e}", file=sys.stderr)
+    remember_mode(name, mode_cfg)
+    print(f"easy-switch: recorded mode {name}")
+    return 0
+
+
+MODIFIER_KEYS = {
+    "ctrl": ("KEY_LEFTCTRL", "KEY_RIGHTCTRL"),
+    "alt": ("KEY_LEFTALT", "KEY_RIGHTALT"),
+    "shift": ("KEY_LEFTSHIFT", "KEY_RIGHTSHIFT"),
+    "meta": ("KEY_LEFTMETA", "KEY_RIGHTMETA"),
+}
+
+
+def parse_hotkey(spec: str) -> tuple[frozenset[str], str]:
+    """"ctrl+alt+down" -> ({"ctrl", "alt"}, "KEY_DOWN")."""
+    *mods, key = [part.strip().lower() for part in spec.split("+")]
+    unknown = [m for m in mods if m not in MODIFIER_KEYS]
+    if unknown or not key:
+        die(f"bad hotkey '{spec}': modifiers are {', '.join(MODIFIER_KEYS)}")
+    return frozenset(mods), f"KEY_{key.upper()}"
+
+
+RESTART = "\0restart"  # sentinel binding target; can't collide with a mode name
+
+
+def cmd_watch_hotkeys(config: dict[str, Any]) -> int:
+    """Gaming Mode has no KDE global shortcuts, so watch keyboards directly
+    (evdev, read-only, no grab: keys still reach the game) for each mode's
+    `hotkey` and switch to it. Steam Input's virtual keyboard is a keyboard
+    too, so a Steam-button chord bound to the same keys works here as well."""
+    import selectors
+
+    import evdev  # python-evdev; only needed for this subcommand
+    from evdev import ecodes
+
+    bindings: dict[tuple[frozenset[str], int], str] = {}
+    for name, mode_cfg in config.get("modes", {}).items():
+        if mode_cfg.get("hotkey"):
+            mods, key = parse_hotkey(mode_cfg["hotkey"])
+            if key not in ecodes.ecodes:
+                die(f"unknown key in hotkey '{mode_cfg['hotkey']}'")
+            bindings[(mods, ecodes.ecodes[key])] = name
+    restart_spec = config.get("restart_hotkey")
+    if restart_spec:
+        mods, key = parse_hotkey(restart_spec)
+        if key not in ecodes.ecodes:
+            die(f"unknown key in restart_hotkey '{restart_spec}'")
+        bindings[(mods, ecodes.ecodes[key])] = RESTART
+    if not bindings:
+        die("no modes have a `hotkey`; nothing to watch")
+    mod_codes = {
+        ecodes.ecodes[k]: mod for mod, keys in MODIFIER_KEYS.items() for k in keys
+    }
+    trigger_codes = {code for _, code in bindings}
+
+    sel = selectors.DefaultSelector()
+    devices: dict[str, Any] = {}
+    held: dict[str, set[str]] = {}
+
+    def rescan() -> None:
+        # Re-run every couple of seconds: Steam's virtual keyboard and
+        # hotplugged keyboards show up after we start.
+        for path in evdev.list_devices():
+            if path in devices:
+                continue
+            try:
+                dev = evdev.InputDevice(path)
+            except OSError:
+                continue
+            keys = set(dev.capabilities().get(ecodes.EV_KEY, []))
+            if not keys & trigger_codes:
+                dev.close()
+                continue
+            devices[path] = dev
+            held[path] = set()
+            sel.register(dev, selectors.EVENT_READ, path)
+
+    def drop(path: str) -> None:
+        dev = devices.pop(path)
+        held.pop(path, None)
+        sel.unregister(dev)
+        try:
+            dev.close()
+        except OSError:
+            pass
+
+    labels = [
+        restart_spec + " -> restart" if n == RESTART else config["modes"][n]["hotkey"] + " -> " + n
+        for n in bindings.values()
+    ]
+    print(f"easy-switch: watching hotkeys: {', '.join(labels)}")
+    rescan()
+    while True:
+        for sk, _ in sel.select(timeout=2.0):
+            path = sk.data
+            try:
+                events = list(devices[path].read())
+            except OSError:  # unplugged
+                drop(path)
+                continue
+            for ev in events:
+                if ev.type != ecodes.EV_KEY or ev.value == 2:  # ignore autorepeat
+                    continue
+                if ev.code in mod_codes:
+                    (held[path].add if ev.value else held[path].discard)(mod_codes[ev.code])
+                    continue
+                mode = bindings.get((frozenset(held[path]), ev.code)) if ev.value == 1 else None
+                if mode == RESTART:
+                    print("easy-switch: hotkey -> restart Gaming Mode")
+                    subprocess.Popen([sys.executable, os.path.realpath(__file__), "--restart-gaming-mode"])
+                elif mode:
+                    print(f"easy-switch: hotkey -> {mode}")
+                    subprocess.Popen([sys.executable, os.path.realpath(__file__), mode])
+        rescan()
+
+
+def cmd_restore(config: dict[str, Any], dry_run: bool) -> int:
+    """Plasma login hook: re-apply the mode last chosen in Gaming Mode, if any."""
+    if not PENDING_PLASMA_FILE.exists():
+        return 0
+    try:
+        name = LAST_MODE_FILE.read_text().strip()
+    except OSError:
+        name = ""
+    modes = config.get("modes", {})
+    if name not in modes:
+        PENDING_PLASMA_FILE.unlink(missing_ok=True)
+        return 0
+    rc = apply_mode(name, modes[name], dry_run=dry_run)
+    if rc == 0 and not dry_run:
+        PENDING_PLASMA_FILE.unlink(missing_ok=True)
+    return rc
 
 
 def list_modes(config: dict[str, Any]) -> int:
@@ -641,7 +951,7 @@ def emit_value(v: Any) -> str:
 
 def emit_mode_block(name: str, mode: dict[str, Any]) -> str:
     lines = [f"[modes.{name}]"]
-    for key in ("description", "requires_any", "strict", "audio", "audio_only_fallback"):
+    for key in ("description", "requires_any", "strict", "audio", "audio_only_fallback", "mangohud", "gamescope_output", "hotkey"):
         if key in mode:
             lines.append(f"{key} = {emit_value(mode[key])}")
     for oname, ocfg in mode.get("outputs", {}).items():
@@ -755,6 +1065,26 @@ def build_parser() -> argparse.ArgumentParser:
         "--list", action="store_true", help="list configured modes and exit"
     )
     p.add_argument(
+        "--restart-gaming-mode",
+        action="store_true",
+        help="restart Gaming Mode on the same screen (inside Gaming Mode only)",
+    )
+    p.add_argument(
+        "--watch-hotkeys",
+        action="store_true",
+        help="run forever, switching modes on each mode's `hotkey` (for Gaming Mode)",
+    )
+    p.add_argument(
+        "--sync",
+        action="store_true",
+        help="record whichever mode matches the screens that are on now",
+    )
+    p.add_argument(
+        "--restore",
+        action="store_true",
+        help="re-apply the mode last chosen in Gaming Mode (run at Plasma login)",
+    )
+    p.add_argument(
         "--dry-run",
         action="store_true",
         help="print commands that would run, change nothing",
@@ -774,6 +1104,9 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    if args.restart_gaming_mode:
+        return restart_gaming_mode("Steam will be back in a few seconds.")
 
     if args.mode == "add":
         if not args.rest:
@@ -802,6 +1135,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.list:
         return list_modes(config)
 
+    if args.restore:
+        return cmd_restore(config, dry_run=args.dry_run)
+
+    if args.sync:
+        return cmd_sync(config, dry_run=args.dry_run)
+
+    if args.watch_hotkeys:
+        return cmd_watch_hotkeys(config)
+
     if not args.mode:
         parser.print_help()
         return 1
@@ -811,6 +1153,8 @@ def main(argv: list[str] | None = None) -> int:
         available = ", ".join(modes) or "(none)"
         die(f"unknown mode '{args.mode}'. Available: {available}")
 
+    if in_gaming_mode():
+        return apply_mode_gaming(args.mode, modes[args.mode], dry_run=args.dry_run)
     return apply_mode(args.mode, modes[args.mode], dry_run=args.dry_run)
 
 
