@@ -313,6 +313,32 @@ GAMING_MODE_CYCLE_ARGS="none|--x-bin $HOME/src/gamescope-gbm/build/src/gamescope
 Don't start a cycle while a session is still stopping, and if you stop one mid-way, remove
 `$XDG_RUNTIME_DIR/easy-switch-gamescope-restart` or Gaming Mode relaunches once more.
 
+### How to test (the method that found the cause)
+
+Intermittent display bugs can't be judged from one start, and the bad rate drifts between days.
+What worked:
+
+1. **Automate the starts, keep a human only for the eyes.** `gaming-mode-cycle` does the
+   restarts; you only look at the TV and tap good/bad on the phone form. 20 s per round is enough.
+2. **A/B in the same run, alternating rounds**, never "today vs yesterday". Rotate the setups
+   with `GAMING_MODE_CYCLE_ARGS` so both see the same TV/temperature/drift. 12 rounds (6 + 6) is
+   the minimum; with 3 setups use 15.
+3. **Change one thing per test** and keep everything else fixed (delay, monitors plugged/unplugged,
+   gamescope build).
+4. **Verify the setup actually applied** before trusting a round: check the journal for the
+   gamescope version, the Lua `warn`/print lines, the per-round `args=` in the diag index.
+5. **Describe what you see, not just bad/good** (where on screen, shape, pattern). "Squares filling
+   left→right, top part fine" is what pointed at scan-out, after "flicker" didn't.
+6. **Record every round** (`MARK` lines in the index) and keep the numbers in the test log below,
+   including tests that didn't help: they rule things out.
+7. **Search upstream once the symptom is precise.** With hardware + exact symptom in hand, the
+   matching gamescope issue (#2309) and NVIDIA's explanation were one search away.
+8. **Confirm a fix three times:** A/B vs stock, then the fix alone as the default, then the
+   final installed package.
+
+Rough significance check for an alternating A/B: 0/6 vs 4/6 bad is ~3 % likely by chance;
+0/12 alone when the baseline is ~65 % bad is ~0.0003 %.
+
 ### Test log (2026-11-03/04, bonestorm)
 
 Bad = rounds the user saw corruption on, by eye. Same TV, cable, 4K60, HDR on.
