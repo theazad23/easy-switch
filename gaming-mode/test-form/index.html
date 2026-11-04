@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>@media (max-width: 640px){ th:nth-child(5), td:nth-child(5){display:none} label{display:inline-block;margin:.15rem .4rem .15rem 0} td{padding:.35rem .25rem} }</style>
+<title>Gaming Mode display test</title>
+<style>
+  :root { color-scheme: light dark; --bad: #d64545; --good: #2e9e5b; }
+  body { font: 16px/1.4 system-ui, sans-serif; max-width: 860px; margin: 2rem auto; padding: 0 1rem; }
+  h1 { font-size: 1.3rem; margin-bottom: .2rem; }
+  p.sub { margin-top: 0; opacity: .7; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { padding: .45rem .5rem; border-bottom: 1px solid #8884; text-align: left; vertical-align: middle; }
+  th { font-size: .85rem; text-transform: uppercase; letter-spacing: .03em; opacity: .7; }
+  td.round { font-weight: 600; }
+  td.delay { font-variant-numeric: tabular-nums; }
+  tr.is-bad { background: color-mix(in srgb, var(--bad) 12%, transparent); }
+  tr.is-good { background: color-mix(in srgb, var(--good) 8%, transparent); }
+  tr.now td { outline: 3px solid #e0a800; outline-offset: -3px; }
+  #live { position: sticky; top: 0; z-index: 2; padding: .6rem .8rem; margin-bottom: .6rem; border-radius: 8px;
+          background: #e0a800; color: #000; font-weight: 700; font-size: 1.1rem; }
+  label { white-space: nowrap; margin-right: .6rem; cursor: pointer; }
+  input[type=text] { width: 100%; box-sizing: border-box; padding: .3rem; }
+  .sym { opacity: .35; pointer-events: none; }
+  tr.is-bad .sym { opacity: 1; pointer-events: auto; }
+  .actions { margin: 1.2rem 0; display: flex; gap: .6rem; flex-wrap: wrap; }
+  button { font: inherit; padding: .5rem 1rem; cursor: pointer; }
+  textarea { width: 100%; box-sizing: border-box; height: 11rem; font: 14px ui-monospace, monospace; }
+  .summary { font-variant-numeric: tabular-nums; margin: .5rem 0; }
+</style>
+</head>
+<body>
+<h1 id="title">Gaming Mode display test</h1>
+<p class="sub" id="sub"></p>
+
+<div id="live">Waiting for the test to start…</div>
+<form id="f">
+<table>
+  <thead><tr><th>Round</th><th>Mode</th><th>Result</th><th>Symptoms (if bad)</th><th>Note</th></tr></thead>
+  <tbody id="rows"></tbody>
+</table>
+<div class="actions">
+  <button type="button" id="allgood">Mark unset rounds good</button>
+  <button type="button" id="gen">Generate answer</button>
+  <button type="button" id="copy">Copy</button>
+  <button type="button" id="send" style="font-weight:600">Submit to bonestorm</button>
+</div>
+</form>
+
+<div class="summary" id="summary"></div>
+<textarea id="out" readonly placeholder="Click “Generate answer”, then copy and paste it to Claude."></textarea>
+
+<script>
+// Configure from the URL, e.g. ?modes=stock,GBM&rounds=12&title=GBM%20test
+//   modes:  labels rotated per round, matching GAMING_MODE_CYCLE_ARGS order (default "normal")
+//   rounds: number of rows (default 12)
+const q = new URLSearchParams(location.search);
+const delays = (q.get("modes") || "normal").split(",").map(s => s.trim()).filter(Boolean);
+const rounds = parseInt(q.get("rounds") || "12", 10);
+const title = q.get("title") || "Gaming Mode display test";
+document.title = title; document.getElementById("title").textContent = title;
+document.getElementById("sub").textContent = `${rounds} rounds · rotating: ${delays.join(" / ")}`;
+// Marks are kept per test run (cycle start time from /status), so a new run starts blank.
+let KEY = "gm-test-" + location.search;
+const symptoms = ["torn blocks", "flicker", "offset", "discoloured"];
+const tbody = document.getElementById("rows");
+for (let r = 1; r <= rounds; r++) {
+  const d = delays[(r - 1) % delays.length];
+  const tr = document.createElement("tr");
+  tr.dataset.round = r; tr.dataset.delay = d;
+  tr.innerHTML = `
+    <td class="round">${r}</td>
+    <td class="delay">${d}</td>
+    <td>
+      <label><input type="radio" name="r${r}" value="good"> good</label>
+      <label><input type="radio" name="r${r}" value="bad"> bad</label>
+    </td>
+    <td class="sym">${symptoms.map(s => `<label><input type="checkbox" value="${s}"> ${s}</label>`).join("")}</td>
+    <td><input type="text" placeholder="optional"></td>`;
+  tr.addEventListener("change", () => {
+    const v = tr.querySelector("input[type=radio]:checked")?.value;
+    tr.classList.toggle("is-bad", v === "bad");
+    tr.classList.toggle("is-good", v === "good");
+    save();
+  });
+  tr.querySelector("input[type=text]").addEventListener("input", save);
+  tbody.appendChild(tr);
+}
+
+function collect() {
+  return [...tbody.rows].map(tr => ({
+    round: +tr.dataset.round, delay: tr.dataset.delay,
+    result: tr.querySelector("input[type=radio]:checked")?.value || "",
+    symptoms: [...tr.querySelectorAll(".sym input:checked")].map(c => c.value),
+    note: tr.querySelector("input[type=text]").value.trim(),
+  }));
+}
+function save() { localStorage.setItem(KEY, JSON.stringify(collect())); }
+function load() {
+  const saved = JSON.parse(localStorage.getItem(KEY) || "[]");
+  saved.forEach(s => {
+    const tr = tbody.rows[s.round - 1]; if (!tr) return;
+    if (s.result) tr.querySelector(`input[value=${s.result}]`).checked = true;
+    tr.querySelectorAll(".sym input").forEach(c => c.checked = s.symptoms.includes(c.value));
+    tr.querySelector("input[type=text]").value = s.note;
+    tr.dispatchEvent(new Event("change"));
+  });
+}
+load();
+
+document.getElementById("allgood").onclick = () => {
+  [...tbody.rows].forEach(tr => {
+    if (!tr.querySelector("input[type=radio]:checked")) {
+      tr.querySelector("input[value=good]").checked = true;
+      tr.dispatchEvent(new Event("change"));
+    }
+  });
+};
+document.getElementById("gen").onclick = () => {
+  const data = collect();
+  const lines = [title + " results:"];
+  data.forEach(x => {
+    let l = `round ${x.round} (${x.delay}): ${x.result || "not seen"}`;
+    if (x.result === "bad" && x.symptoms.length) l += ` [${x.symptoms.join(", ")}]`;
+    if (x.note) l += ` — ${x.note}`;
+    lines.push(l);
+  });
+  const per = delays.map(d => {
+    const rs = data.filter(x => x.delay === d && x.result);
+    return `${d}: ${rs.filter(x => x.result === "bad").length}/${rs.length} bad`;
+  });
+  lines.push("", "Per mode: " + per.join(" · "));
+  document.getElementById("summary").textContent = "Per mode: " + per.join(" · ");
+  document.getElementById("out").value = lines.join("\n");
+};
+document.getElementById("copy").onclick = async () => {
+  const out = document.getElementById("out");
+  if (!out.value) document.getElementById("gen").click();
+  try { await navigator.clipboard.writeText(out.value); }
+  catch { out.select(); document.execCommand("copy"); }
+  document.getElementById("copy").textContent = "Copied ✓";
+  setTimeout(() => document.getElementById("copy").textContent = "Copy", 1500);
+};
+document.getElementById("send").onclick = async () => {
+  document.getElementById("gen").click();
+  const btn = document.getElementById("send");
+  try {
+    const r = await fetch("/submit", { method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ rounds: collect(), text: document.getElementById("out").value }) });
+    btn.textContent = r.ok ? "Submitted ✓ — tell Claude" : "Failed (" + r.status + ")";
+  } catch { btn.textContent = "Failed — use Copy instead"; }
+};
+async function poll() {
+  try {
+    const st = await (await fetch("/status", {cache: "no-store"})).json();
+    const runKey = "gm-test-" + location.search + "@" + (st.start || "");
+    if (runKey !== KEY) {   // new cycle -> blank form (or that run's saved marks)
+      KEY = runKey;
+      [...tbody.rows].forEach(tr => { tr.querySelectorAll("input").forEach(i => { if (i.type === "text") i.value = ""; else i.checked = false; }); tr.classList.remove("is-bad", "is-good"); });
+      load();
+    }
+    const live = document.getElementById("live");
+    [...tbody.rows].forEach(tr => tr.classList.remove("now"));
+    if (st.done) live.textContent = `Test finished (${st.total} rounds) — fill in any gaps and Submit`;
+    else if (st.round) {
+      const tr = tbody.rows[st.round - 1];
+      if (tr) { tr.classList.add("now"); }
+      live.textContent = `NOW ON TV: round ${st.round} of ${st.total} — ${tr ? tr.dataset.delay : ""}`;
+    } else live.textContent = "Starting… round 1 is coming up";
+  } catch {}
+}
+poll(); setInterval(poll, 2000);
+</script>
+</body>
+</html>

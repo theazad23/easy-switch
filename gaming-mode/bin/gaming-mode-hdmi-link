@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Read HDMI 2.0 link health from the TV itself (SCDC registers over DDC, read-only).
+# This sees the signal *as the TV receives it*, i.e. after the cable -- unlike
+# gamescope screenshots, which are clean even when the TV picture is torn.
+#
+#   gaming-mode-hdmi-link                 # one line: lock / scrambling / error counts
+#   gaming-mode-hdmi-link watch [secs=2]  # one line per interval until killed
+#   gaming-mode-hdmi-link bus             # print the i2c bus the TV is on
+#
+# Fields:  clk=1 lock=111  -> TMDS clock + channels 0/1/2 locked (anything else = bad)
+#          scr=1           -> TV has locked onto the scrambled signal (needed at 4K60)
+#          cfg=03          -> source asked for scrambling + 1/40 clock ratio
+#          err=a,b,c       -> character errors per channel since last read (0 = clean)
+# Needs read access to /dev/i2c-N (uaccess ACL on the active seat, or the i2c group).
+connector="${GAMING_MODE_HDMI_CONNECTOR:-HDMI-A-1}"
+
+find_bus() {   # the NVIDIA DDC bus whose EDID vendor bytes match the connector's EDID
+    local edid want b
+    edid=$(ls /sys/class/drm/card*-"$connector"/edid 2>/dev/null | head -1)
+    [ -n "$edid" ] || return 1
+    want=$(od -An -tx1 -j8 -N2 "$edid" | tr -d ' \n')
+    for b in /sys/bus/i2c/devices/i2c-*/name; do
+        grep -q 'NVIDIA i2c adapter\|AMDGPU DM\|i915 gmbus\|DP-AUX\|ddc' "$b" 2>/dev/null || continue
+        b=${b%/name}; b=${b##*/i2c-}
+        got=$( { i2cget -y "$b" 0x50 0x08 && i2cget -y "$b" 0x50 0x09; } 2>/dev/null | sed 's/0x//' | tr -d '\n')
+        [ "$got" = "$want" ] && { echo "$b"; return 0; }
+    done
+    return 1
+}
+
+bus="${GAMING_MODE_HDMI_BUS:-}"
+[ -n "$bus" ] || bus=$(find_bus) || { echo "hdmi-link: no DDC bus for $connector" >&2; exit 1; }
+
+rd() { i2cget -y "$bus" 0x54 "$1" 2>/dev/null || echo X; }
+ced() {   # ced <lo> <hi>: 15-bit count if valid bit set, else '-'
+    local lo hi; lo=$(rd "$1"); hi=$(rd "$2")
+    [[ $lo == X || $hi == X ]] && { echo X; return; }
+    (( hi & 0x80 )) && echo $(( ((hi & 0x7f) << 8) | lo )) || echo -
+}
+sample() {
+    local cfg scr st e0 e1 e2
+    cfg=$(rd 0x20); scr=$(rd 0x21); st=$(rd 0x40)
+    if [[ $st == X ]]; then echo "$(date +%T) scdc=unreadable"; return; fi
+    e0=$(ced 0x50 0x51); e1=$(ced 0x52 0x53); e2=$(ced 0x54 0x55)
+    printf '%s clk=%d lock=%d%d%d scr=%d cfg=%02x err=%s,%s,%s\n' "$(date +%T)" \
+        $(( st & 1 )) $(( st >> 1 & 1 )) $(( st >> 2 & 1 )) $(( st >> 3 & 1 )) \
+        $(( scr & 1 )) $(( cfg )) "$e0" "$e1" "$e2"
+}
+
+case "${1:-}" in
+    bus)   echo "$bus" ;;
+    watch) while :; do sample; sleep "${2:-2}"; done ;;
+    *)     sample ;;
+esac

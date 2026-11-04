@@ -30,6 +30,9 @@ command -v powerprofilesctl >/dev/null || warn "powerprofilesctl missing (steam-
 echo "== scripts -> ~/.local/bin"
 for f in "$GM"/bin/*; do put "$f" "$HOME/.local/bin/$(basename "$f")" 755; done
 
+echo "== test form (gaming-mode-test-form)"
+for f in "$GM"/test-form/*; do put "$f" "$HOME/.local/share/gaming-mode/test-form/$(basename "$f")"; done
+
 echo "== systemd user units"
 for f in "$GM"/systemd/user/*.service; do put "$f" "$HOME/.config/systemd/user/$(basename "$f")"; done
 put "$GM/systemd/user/gamescope-session.service.d/easy-switch.conf" \
@@ -65,7 +68,12 @@ if (( NVIDIA )); then
     echo "== NVIDIA workarounds"
     put "$GM/nvidia/gamescope-wrapper" "$HOME/.local/share/gaming-mode/bin/gamescope" 755
     put "$GM/nvidia/gamescope-session-nvidia.conf" "$HOME/.config/systemd/user/gamescope-session.service.d/nvidia.conf"
+    put "$GM/nvidia/gamescope-session-delay.conf" "$HOME/.config/systemd/user/gamescope-session.service.d/start-delay.conf"
     put "$GM/nvidia/50-nvidia-tv-fix.lua" "$HOME/.config/gamescope/scripts/50-nvidia-tv-fix.lua"
+    if ! pacman -Q gamescope-gbm-git >/dev/null 2>&1; then
+        warn "gamescope-gbm-git not installed: 4K TV output will corrupt on ~half the starts."
+        warn "Build it: cd $GM/nvidia/gamescope-gbm-git && ./update.sh   (see its README.md)"
+    fi
 fi
 
 echo "== enable"

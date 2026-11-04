@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Show / set extra gamescope flags for the next Gaming Mode start (NVIDIA wrapper).
+#   gaming-mode-extra-args                              # print current flags
+#   gaming-mode-extra-args --disable-color-management   # set
+#   gaming-mode-extra-args none                         # clear
+f="${XDG_CONFIG_HOME:-$HOME/.config}/gaming-mode/extra-args"
+if [ $# -eq 0 ]; then cat "$f" 2>/dev/null | grep . || echo none; exit 0; fi
+mkdir -p "$(dirname "$f")"
+if [ "$*" = none ]; then : > "$f"; else
+    prev=""; for a in "$@"; do [[ "$a" == --* || "$prev" == --x-convar || "$prev" == --x-bin ]] || { echo "only --flags allowed: $a" >&2; exit 1; }; prev=$a; done
+    echo "$*" > "$f"
+fi
+echo "gamescope extra args: $(cat "$f" | grep . || echo none)"

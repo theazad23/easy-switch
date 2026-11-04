@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Phone-friendly form for marking gaming-mode-cycle rounds good/bad, with a live
+# "NOW ON TV: round N" banner. Runs as a transient user service (gone after reboot).
+#   gaming-mode-test-form start [port=8766]   # then open the printed URL on your phone
+#   gaming-mode-test-form stop
+#   gaming-mode-test-form results             # last submission (also: ~/.local/state/gaming-mode-diag/test-form-results.json)
+# URL options: ?modes=stock,GBM&rounds=12&title=GBM%20test  (modes rotate like GAMING_MODE_CYCLE_ARGS)
+# Firewall: the port must be open to the LAN, e.g.
+#   sudo ufw allow from 192.168.10.0/24 to any port 8766 proto tcp
+share="${XDG_DATA_HOME:-$HOME/.local/share}/gaming-mode/test-form"
+out="${XDG_STATE_HOME:-$HOME/.local/state}/gaming-mode-diag/test-form-results.json"
+unit=gaming-mode-test-form
+case "${1:-start}" in
+    start)
+        port=${2:-8766}
+        systemctl --user stop "$unit" 2>/dev/null
+        mkdir -p "$(dirname "$out")"
+        systemd-run --user --quiet --unit="$unit" --collect \
+            python3 -I "$share/serve.py" "$share/index.html" "$out" "0.0.0.0:$port"
+        sleep 1
+        systemctl --user is-active --quiet "$unit" || { journalctl --user -u "$unit" -n 5 --no-pager; exit 1; }
+        ip=$(ip -4 -o route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p')
+        echo "Form: http://${ip:-localhost}:$port/?modes=normal&rounds=12"
+        ;;
+    stop) systemctl --user stop "$unit" && echo stopped ;;
+    results) python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d.get("submitted","")); print(d.get("text",""))' "$out" ;;
+    *) sed -n '2,10p' "$0"; exit 1 ;;
+esac

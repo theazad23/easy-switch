@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Show or set the Gaming Mode start delay (NVIDIA TV testing).
+#   gaming-mode-delay        # print current seconds
+#   gaming-mode-delay 8      # wait 8 s before gamescope starts (0 = off)
+# Takes effect on the next Gaming Mode start; no reload needed.
+f="${XDG_CONFIG_HOME:-$HOME/.config}/gaming-mode/start-delay.env"
+if [ $# -eq 0 ]; then
+    sed -n 's/^GAMING_MODE_START_DELAY=//p' "$f" 2>/dev/null | grep . || echo 0
+    exit 0
+fi
+[[ "$1" =~ ^[0-9]+$ ]] && [ "$1" -le 60 ] || { echo "usage: gaming-mode-delay <0-60>" >&2; exit 1; }
+mkdir -p "$(dirname "$f")"
+echo "GAMING_MODE_START_DELAY=$1" > "$f"
+echo "start delay: $1 s"

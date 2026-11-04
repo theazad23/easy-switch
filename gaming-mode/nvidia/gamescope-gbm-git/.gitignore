@@ -1,0 +1,14 @@
+# makepkg output
+src/
+pkg/
+*.pkg.tar*
+*.log
+/gamescope/
+/wlroots/
+/libliftoff/
+/vkroots/
+/libdisplay-info/
+/openvr/
+/reshade/
+/GamescopeShaders/
+/SPIRV-Headers/

@@ -1,10 +1,23 @@
 #!/usr/bin/env bash
 # Repeatedly enter Gaming Mode so torn/clean starts can be watched and reported.
-#   gaming-mode-cycle [rounds=5] [seconds-per-round=25]
+#   gaming-mode-cycle [rounds=5] [seconds-per-round=25] [delays...]
+#   e.g. gaming-mode-cycle 12 25 0 4 8 15   # rotate start delays 0,4,8,15 s per round
+# With delays given, each round's start delay is set before it starts and the
+# previous delay is restored at the end (the diag index logs delay= per session).
+# GAMING_MODE_CYCLE_ARGS="none|--disable-color-management" rotates extra gamescope
+# flags per round the same way ('|'-separated, 'none' = no extra flags).
 # Run from the desktop. Each round is numbered in the diag index
 # (~/.local/state/gaming-mode-diag/index.log) so "3 bad" maps to a log.
 # After the last round it returns to the desktop.
-rounds=${1:-5}; hold=${2:-25}
+rounds=${1:-5}; hold=${2:-25}; shift 2 2>/dev/null || shift $#; delays=("$@")
+here="$(dirname "$(readlink -f "$0")")"
+IFS='|' read -r -a argsets <<< "${GAMING_MODE_CYCLE_ARGS:-}"
+set_delay() {  # set_delay <round>: pick this round's delay from the list
+    [ ${#delays[@]} -gt 0 ] && "$here/gaming-mode-delay" "${delays[$(( ($1 - 1) % ${#delays[@]} ))]}" >/dev/null
+    # shellcheck disable=SC2086
+    [ ${#argsets[@]} -gt 0 ] && "$here/gaming-mode-extra-args" ${argsets[$(( ($1 - 1) % ${#argsets[@]} ))]} >/dev/null
+    return 0
+}
 idx="${XDG_STATE_HOME:-$HOME/.local/state}/gaming-mode-diag/index.log"
 flag="$XDG_RUNTIME_DIR/easy-switch-gamescope-restart"
 active() { systemctl --user is-active --quiet gamescope-session.service; }
@@ -20,17 +33,23 @@ wait_for() {  # wait_for up|down <timeout>
 if [ -z "$GAMING_MODE_CYCLE_DETACHED" ]; then
     exec systemd-run --user --collect --unit="gaming-mode-cycle-$(date +%H%M%S)" \
         --setenv=GAMING_MODE_CYCLE_DETACHED=1 --setenv=XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" \
-        "$(readlink -f "$0")" "$rounds" "$hold"
+        --setenv=GAMING_MODE_CYCLE_ARGS="${GAMING_MODE_CYCLE_ARGS:-}" \
+        "$(readlink -f "$0")" "$rounds" "$hold" "$@"
 fi
 
-echo "$(date '+%F %T') CYCLE start: $rounds rounds x ${hold}s" >> "$idx"
+orig_delay=$("$here/gaming-mode-delay"); orig_args=$("$here/gaming-mode-extra-args")
+echo "$(date '+%F %T') CYCLE start: $rounds rounds x ${hold}s, delays: ${delays[*]:-unchanged ($orig_delay)}, args: ${GAMING_MODE_CYCLE_ARGS:-unchanged ($orig_args)}" >> "$idx"
+set_delay 1
 active || steamos-session-select gamescope
 for i in $(seq 1 "$rounds"); do
     if ! wait_for up 120; then echo "$(date '+%F %T') CYCLE round $i: Gaming Mode never started, stopping" >> "$idx"; exit 1; fi
     echo "$(date '+%F %T') CYCLE round $i of $rounds" >> "$idx"
     sleep "$hold"
-    [ "$i" -lt "$rounds" ] && touch "$flag"   # relog straight back into Gaming Mode
+    [ "$i" -lt "$rounds" ] && { set_delay $((i + 1)); touch "$flag"; }   # relog straight back into Gaming Mode
     systemctl --user --no-block stop gamescope-session.target
     wait_for down 60
 done
+[ ${#delays[@]} -gt 0 ] && "$here/gaming-mode-delay" "$orig_delay" >/dev/null
+# shellcheck disable=SC2086
+[ ${#argsets[@]} -gt 0 ] && "$here/gaming-mode-extra-args" $orig_args >/dev/null
 echo "$(date '+%F %T') CYCLE done" >> "$idx"

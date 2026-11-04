@@ -1,0 +1,142 @@
+# gamescope (upstream git master) + NVIDIA GBM scan-out patch.
+# Based on the AUR gamescope-git PKGBUILD. Replaces gamescope / gamescope-git.
+#
+# Why: NVIDIA's display engine can't scan out non-contiguous memory; gamescope allocates its
+# scan-out images with Vulkan, which at 4K are sometimes non-contiguous -> torn/flickering TV in
+# Gaming Mode on a random ~50-80 % of starts (ValveSoftware/gamescope #2309, #1593).
+# The patch (from farnoy/gamescope nvidia-gbm-wayland, rebased) adds the `drm_gbm_scanout`
+# convar: allocate scan-out buffers with GBM like KWin does. It's OFF by default; Gaming Mode
+# turns it on from ~/.config/gamescope/scripts/50-nvidia-tv-fix.lua.
+#
+# Update:  ./update.sh            (pull latest upstream, re-apply patch, build, install)
+# Patch no longer applies?  ./refresh-patch.sh  (see README.md)
+
+_pkgname=gamescope
+pkgname=gamescope-gbm-git
+pkgver=3.17.0.r10.g309eee74
+pkgrel=1
+pkgdesc='SteamOS session compositing window manager (git) with NVIDIA GBM scan-out patch'
+arch=(x86_64)
+url=https://github.com/ValveSoftware/gamescope
+license=(BSD-2-Clause)
+depends=(
+  libavif
+  libcap.so
+  libdecor
+  libdrm
+  libei
+  libinput
+  libpipewire-0.3.so
+  libx11
+  libxcb
+  libxcomposite
+  libxcursor
+  libxdamage
+  libxext
+  libxfixes
+  libxi
+  libxkbcommon.so
+  libxmu
+  libxrender
+  libxres
+  libxtst
+  libxxf86vm
+  lcms2
+  luajit
+  mesa  # libgbm
+  pixman
+  seatd
+  sdl2
+  systemd-libs
+  vulkan-icd-loader
+  wayland
+  xcb-util-errors
+  xcb-util-wm
+  xorg-server-xwayland
+)
+makedepends=(
+  benchmark
+  catch2
+  cmake
+  git
+  glslang
+  meson
+  ninja
+  vulkan-headers
+  wayland-protocols
+)
+source=(
+  'git+https://github.com/ValveSoftware/gamescope.git'
+  'git+https://gitlab.freedesktop.org/wlroots/wlroots.git'
+  'git+https://gitlab.freedesktop.org/emersion/libliftoff.git'
+  'git+https://github.com/Joshua-Ashton/vkroots.git'
+  'git+https://gitlab.freedesktop.org/emersion/libdisplay-info.git'
+  'git+https://github.com/ValveSoftware/openvr.git'
+  'git+https://github.com/Joshua-Ashton/reshade.git'
+  'git+https://github.com/Joshua-Ashton/GamescopeShaders.git#tag=v0.1'
+  'git+https://github.com/KhronosGroup/SPIRV-Headers.git'
+  '0001-nvidia-gbm-scanout.patch'
+)
+b2sums=('SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP')
+
+provides=("$_pkgname" "$_pkgname-git")
+conflicts=("$_pkgname" "$_pkgname-git")
+
+prepare() {
+  cd "$_pkgname"
+
+  # makepkg reuses the clone between builds: start from a clean tree each time
+  git reset --hard -q
+  git clean -fdq -e subprojects
+
+  for src in "${source[@]}"; do
+    src="${src%%::*}"
+    src="${src##*/}"
+    [[ $src = *.patch ]] || continue
+    echo "Applying patch $src..."
+    if ! git apply --3way "../$src"; then
+      error "$src no longer applies to upstream $(git rev-parse --short HEAD)."
+      error "Run ./refresh-patch.sh next to this PKGBUILD (see README.md)."
+      return 1
+    fi
+  done
+
+  meson subprojects download
+
+  local sm
+  for sm in subprojects/wlroots subprojects/libliftoff subprojects/vkroots \
+            subprojects/libdisplay-info subprojects/openvr src/reshade thirdparty/SPIRV-Headers; do
+    git submodule init "$sm"
+    git config "submodule.$sm.url" "../${sm##*/}"
+  done
+  git -c protocol.file.allow=always submodule update
+}
+
+pkgver() {
+  cd "$_pkgname"
+  git describe --long --tags | sed 's/\([^-]*-g\)/r\1/;s/-/./g'
+}
+
+build() {
+  export CMAKE_POLICY_VERSION_MINIMUM=3.5
+
+  cd "$_pkgname"
+  arch-meson . build \
+    -Dforce_fallback_for=stb,wlroots,vkroots,libliftoff,glm,libdisplay-info \
+    -Dpipewire=enabled
+  ninja -C build
+}
+
+package() {
+  cd "$srcdir/$_pkgname"
+
+  install -d "$pkgdir"/usr/share/gamescope/reshade
+  cp -r "$srcdir"/GamescopeShaders/* "$pkgdir"/usr/share/gamescope/reshade/
+  chmod -R 755 "$pkgdir"/usr/share/gamescope
+
+  meson install -C build --skip-subprojects --destdir="${pkgdir}"
+
+  install -Dm 644 LICENSE -t "${pkgdir}/usr/share/licenses/$pkgname/"
+}
+
+# vim: ts=2 sw=2 et:

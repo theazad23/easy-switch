@@ -3,4 +3,42 @@
 # separate layers / direct scan-out to the driver. Without this the TV showed
 # torn, offset, miscoloured blocks (Steam UI and game layers mis-merged).
 # Put first in PATH by the gamescope-session.service drop-in.
-exec /usr/bin/gamescope --force-composition "$@"
+# Extra flags for testing: one line in ~/.config/gaming-mode/extra-args
+# (set with `gaming-mode-extra-args`), inserted before the session's own args.
+# Wrapper-only pseudo-flags (not passed to gamescope):
+#   --x-explicit-sync        leave gamescope's explicit sync ON this start, i.e. disable
+#                            ~/.config/gamescope/scripts/50-nvidia-tv-fix.lua (renamed .off)
+#   --x-convar NAME=VALUE    set a gamescope convar this start (via 60-gaming-mode-test.lua)
+#   --x-bin PATH             run this gamescope binary instead of /usr/bin/gamescope
+cfg="${XDG_CONFIG_HOME:-$HOME/.config}"
+scripts="$cfg/gamescope/scripts"
+lua="$scripts/50-nvidia-tv-fix.lua"
+test_lua="$scripts/60-gaming-mode-test.lua"
+rm -f "$test_lua"
+explicit=0; pass=""
+# GBM scan-out build (fixes NVIDIA 4K scan-out corruption, see GAMING-MODE.md) if present,
+# else the system gamescope. Delete ~/.local/opt/gamescope-gbm to go back to stock.
+bin=/usr/bin/gamescope
+[ -x "$HOME/.local/opt/gamescope-gbm/gamescope" ] && bin="$HOME/.local/opt/gamescope-gbm/gamescope"
+# shellcheck disable=SC2046
+set -- $(head -1 "$cfg/gaming-mode/extra-args" 2>/dev/null) -- "$@"
+while [ "$1" != "--" ]; do
+    case "$1" in
+        --x-explicit-sync) explicit=1 ;;
+        --x-bin) shift; [ -x "$1" ] && bin=$1 || echo "wrapper: --x-bin $1 not executable, using $bin" >&2 ;;
+        --x-convar)
+            shift; name=${1%%=*}; val=${1#*=}
+            case "$name" in *[!a-z0-9_]*|"") echo "wrapper: bad convar $1" >&2; shift; continue ;; esac
+            case "$val" in true|false|[0-9]*) ;; *) val="\"$val\"" ;; esac
+            mkdir -p "$scripts"
+            printf 'gamescope.convars.%s.value = %s\n(warn or print)("60-gaming-mode-test: %s = " .. tostring(gamescope.convars.%s.value))\n' \
+                "$name" "$val" "$name" "$name" >> "$test_lua" ;;
+        *) pass="$pass $1" ;;
+    esac
+    shift
+done
+shift   # drop the "--" separator; "$@" is now the session's own arguments
+if [ "$explicit" = 1 ]; then [ -e "$lua" ] && mv -f "$lua" "$lua.off"
+else [ -e "$lua.off" ] && mv -f "$lua.off" "$lua"; fi
+# shellcheck disable=SC2086  # word-splitting of $pass is intended
+exec "$bin" --force-composition $pass "$@"
