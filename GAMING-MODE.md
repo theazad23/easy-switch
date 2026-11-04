@@ -302,7 +302,7 @@ All installed by `./install.sh`; the wrapper flags need `--nvidia`. Every sessio
 | `gaming-mode-diag mark bad "note"` | Mark the newest session by hand |
 | `gaming-mode-extra-args [flags…\|none]` | Extra flags for the next start. Real gamescope flags pass through; wrapper-only: `--x-bin PATH` (other gamescope binary), `--x-convar NAME=VALUE` (set a convar), `--x-explicit-sync` (skip `50-nvidia-tv-fix.lua`) |
 | `gaming-mode-delay [secs]` | Wait before gamescope starts (default 0; tested: no effect) |
-| `gaming-mode-hdmi-link [watch]` | Read the TV's HDMI 2.0 SCDC registers over DDC (read-only): clock/channel lock, scrambling, character errors. diag logs it every 2 s (`*-link.log`, `LINK` line in the index) |
+| `gaming-mode-hdmi-link [watch]` | Read the TV's HDMI 2.0 SCDC registers over DDC (read-only): clock/channel lock, scrambling, character errors. diag logs it every 2 s (`*-link.log`, `LINK` line in the index). The LG TV doesn't clear its error counters, so only counts that **grow** during a session are bad; a fixed start count (e.g. `12,12,8` after a reboot) is link bring-up |
 
 Example, A/B of a gamescope build (what proved the fix):
 ```bash

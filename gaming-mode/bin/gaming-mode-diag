@@ -54,20 +54,28 @@ link="${log%.log}-link.log"
 hdmi_link="$(dirname "$(readlink -f "$0")")/gaming-mode-hdmi-link"
 case "$connector" in HDMI-*) GAMING_MODE_HDMI_CONNECTOR="$connector" "$hdmi_link" watch 2 > "$link" 2>&1 & ;; esac
 link_verdict() {   # summarise the link log so far: clean | BAD(<reasons>)
+    # The TV's error counters are not reliably cleared on read (LG keeps the count from link
+    # bring-up), so only errors that *grow* during the session count as bad.
     [ -s "$link" ] || { echo "n/a"; return; }
     awk '/scdc=unreadable/ {u++; next}
-         { n++; split($0, f, " ")
-           for (i in f) { split(f[i], kv, "=")
+         { n++
+           for (i = 1; i <= NF; i++) { split($i, kv, "=")
              if (kv[1]=="clk" && kv[2]!="1") nolock++
              if (kv[1]=="lock" && kv[2]!="111") nolock++
              if (kv[1]=="scr" && kv[2]!="1") noscr++
-             if (kv[1]=="err") { m=split(kv[2], e, ","); for (j=1;j<=m;j++) if (e[j] ~ /^[0-9]+$/) { tot+=e[j]; if (e[j]>0) errs++ } } } }
-         END { r=""
-               if (nolock) r=r sprintf(" unlocked:%d", nolock)
-               if (noscr)  r=r sprintf(" unscrambled:%d", noscr)
-               if (errs)   r=r sprintf(" err-samples:%d err-total:%d", errs, tot)
-               if (u)      r=r sprintf(" unreadable:%d", u)
-               printf "%s (%d samples)\n", (r=="" ? "clean" : "BAD(" substr(r,2) ")"), n }' "$link"
+             if (kv[1]=="err") { m = split(kv[2], e, ",")
+               for (j = 1; j <= m; j++) if (e[j] ~ /^[0-9]+$/) {
+                 if (n == 1) first[j] = e[j]
+                 else if (e[j] > last[j]) { grew++; added += e[j] - last[j] }
+                 else if (e[j] < last[j]) { grew++; added += e[j] }   # counter was cleared, new errors
+                 last[j] = e[j] } } } }
+         END { r = ""
+               if (nolock) r = r sprintf(" unlocked:%d", nolock)
+               if (noscr)  r = r sprintf(" unscrambled:%d", noscr)
+               if (grew)   r = r sprintf(" errors-growing:%d new:%d", grew, added)
+               if (u)      r = r sprintf(" unreadable:%d", u)
+               base = ""; for (j = 1; j <= 3; j++) if (first[j] > 0) base = " (start count " first[1] "," first[2] "," first[3] ")"
+               printf "%s%s (%d samples)\n", (r == "" ? "clean" : "BAD(" substr(r, 2) ")"), base, n }' "$link"
 }
 {
     echo "Gaming Mode session $(date)"
