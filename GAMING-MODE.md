@@ -302,7 +302,7 @@ All installed by `./install.sh`; the wrapper flags need `--nvidia`. Every sessio
 | `gaming-mode-diag mark bad "note"` | Mark the newest session by hand |
 | `gaming-mode-extra-args [flags…\|none]` | Extra flags for the next start. Real gamescope flags pass through; wrapper-only: `--x-bin PATH` (other gamescope binary), `--x-convar NAME=VALUE` (set a convar), `--x-explicit-sync` (skip `50-nvidia-tv-fix.lua`) |
 | `gaming-mode-delay [secs]` | Wait before gamescope starts (default 0; tested: no effect) |
-| `gaming-mode-hdmi-link [watch]` | Read the TV's HDMI 2.0 SCDC registers over DDC (read-only): clock/channel lock, scrambling, character errors. diag logs it every 2 s (`*-link.log`, `LINK` line in the index). The LG TV doesn't clear its error counters, so only counts that **grow** during a session are bad; a fixed start count (e.g. `12,12,8` after a reboot) is link bring-up |
+| `gaming-mode-hdmi-link [watch]` | Read the TV's HDMI 2.0 SCDC registers over DDC (read-only): clock/channel lock, scrambling, character errors. diag logs it every 2 s (`*-link.log`, `LINK` line in the index). The LG TV doesn't clear its error counters, so only counts that **grow** during a session are bad; a fixed start count is link bring-up. Example: a **PC** reboot with the TV left on gave `12,12,8` for the whole session (BIOS → console → nvidia-drm → gamescope each re-set the HDMI mode; a few garbled characters per switch are normal), while desktop↔Gaming Mode switches stay at 0 |
 
 Example, A/B of a gamescope build (what proved the fix):
 ```bash
@@ -359,6 +359,7 @@ Bad = rounds the user saw corruption on, by eye. Same TV, cable, 4K60, HDR on.
 | **GBM scan-out vs stock, alternating** | **GBM 0/6, stock 4/6** | **Fix** (p ≈ 0.03) |
 | GBM as default | 0/12 | Confirmed |
 | Installed `gamescope-gbm-git` package | 0/6 | **0/24 GBM starts** vs ~65 % bad on stock that day |
+| PC reboot (TV left on) straight into Gaming Mode | clean picture; SCDC start count `12,12,8`, never growing | Reboot persistence OK; counts are boot-time mode switches, not a link problem |
 
 Kernel note: the bad rate rose after linux-cachyos 7.3.0 → 7.3.1 (11-03), probably memory-layout
 luck rather than the kernel itself; the user keeps the bleeding-edge kernel. Log mining of 60 marked
