@@ -1,15 +1,26 @@
 #!/usr/bin/env bash
 # User half of the Gaming Mode setup (no root). Idempotent; re-run after editing
 # the templates. See GAMING-MODE.md for the full order of steps.
-#   ./install.sh            # AMD / Intel
-#   ./install.sh --nvidia   # also install the NVIDIA-only gamescope workarounds
+#   ./install.sh               # auto: NVIDIA extras only if the NVIDIA driver is loaded
+#   ./install.sh --nvidia      # force the NVIDIA-only gamescope workarounds (gaming-mode/nvidia/)
+#   ./install.sh --no-nvidia   # force without them (AMD / Intel)
+# Everything outside gaming-mode/nvidia/ is vendor-neutral and installed on every host.
 set -euo pipefail
 GM="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(dirname "$GM")"
-NVIDIA=0; [[ "${1:-}" == "--nvidia" ]] && NVIDIA=1
 
 say()  { printf '  %s\n' "$*"; }
 warn() { printf '  ! %s\n' "$*" >&2; }
+
+HAVE_NVIDIA=0; [[ -r /proc/driver/nvidia/version ]] && HAVE_NVIDIA=1
+case "${1:-}" in
+    --nvidia)    NVIDIA=1 ;;
+    --no-nvidia) NVIDIA=0 ;;
+    "")          NVIDIA=$HAVE_NVIDIA ;;
+    *)           echo "usage: $0 [--nvidia|--no-nvidia]" >&2; exit 1 ;;
+esac
+(( NVIDIA == HAVE_NVIDIA )) || warn "NVIDIA extras $( ((NVIDIA)) && echo ON || echo OFF) but the NVIDIA driver is $( ((HAVE_NVIDIA)) && echo loaded || echo 'not loaded') -- forced by $1"
+echo "== GPU: $( ((HAVE_NVIDIA)) && echo NVIDIA || echo 'AMD/Intel (Mesa)'); NVIDIA extras: $( ((NVIDIA)) && echo yes || echo no)"
 put()  {  # put <template> <dest> [mode]: copy with @HOME@ filled in; back up a differing existing file once
     local src="$1" dst="$2" mode="${3:-644}" tmp
     mkdir -p "$(dirname "$dst")"
@@ -93,9 +104,27 @@ if (( NVIDIA )); then
     put "$GM/nvidia/gamescope-session-nvidia.conf" "$HOME/.config/systemd/user/gamescope-session.service.d/nvidia.conf"
     put "$GM/nvidia/gamescope-session-delay.conf" "$HOME/.config/systemd/user/gamescope-session.service.d/start-delay.conf"
     put "$GM/nvidia/50-nvidia-tv-fix.lua" "$HOME/.config/gamescope/scripts/50-nvidia-tv-fix.lua"
+    # Test knobs read only by the NVIDIA wrapper / delay drop-in
+    for f in "$GM"/nvidia/bin/*; do put "$f" "$HOME/.local/bin/$(basename "$f")" 755; done
     if ! pacman -Q gamescope-gbm-git >/dev/null 2>&1; then
         warn "gamescope-gbm-git not installed: 4K TV output will corrupt on ~half the starts."
         warn "Build it: cd $GM/nvidia/gamescope-gbm-git && ./update.sh   (see its README.md)"
+    fi
+else
+    # Leftovers from an earlier --nvidia install would still wrap gamescope (PATH drop-in)
+    # or delay its start. Don't delete silently; list them.
+    stale=()
+    for f in "$HOME/.config/systemd/user/gamescope-session.service.d/nvidia.conf" \
+             "$HOME/.config/systemd/user/gamescope-session.service.d/start-delay.conf" \
+             "$HOME/.local/share/gaming-mode/bin/gamescope" \
+             "$HOME/.config/gamescope/scripts/50-nvidia-tv-fix.lua" \
+             "$HOME/.local/bin/gaming-mode-delay" "$HOME/.local/bin/gaming-mode-extra-args"; do
+        [[ -e "$f" ]] && stale+=("$f")
+    done
+    if (( ${#stale[@]} )); then
+        warn "NVIDIA-only files from an earlier --nvidia install are still active on this non-NVIDIA setup:"
+        for f in "${stale[@]}"; do warn "    $f"; done
+        warn "remove them: rm ${stale[*]}; systemctl --user daemon-reload"
     fi
 fi
 

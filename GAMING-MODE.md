@@ -122,8 +122,14 @@ if `/home` has < 500 MB free (SteamOS behavior) — keep libraries on another di
 
 ```bash
 cd ~/Projects/easy-switch/gaming-mode
-./install.sh            # AMD/Intel.  NVIDIA: ./install.sh --nvidia
+./install.sh            # detects the GPU: NVIDIA extras only if the NVIDIA driver is loaded
+                        # override: --nvidia / --no-nvidia
 ```
+
+**Vendor split:** everything under `gaming-mode/` is vendor-neutral and installed on every host,
+*except* [`gaming-mode/nvidia/`](gaming-mode/nvidia/), which is installed only with NVIDIA extras on.
+On a non-NVIDIA run the installer lists (never deletes) NVIDIA files left from an earlier `--nvidia`
+install — the PATH wrapper / start delay would otherwise still be active.
 
 Installs (backs up any differing existing file as `*.pre-gaming-mode`):
 
@@ -134,8 +140,8 @@ Installs (backs up any differing existing file as `*.pre-gaming-mode`):
 | `~/.local/bin/steam-clean-launch-options` | One-off: strips `game-performance`, redundant `PROTON_ENABLE_WAYLAND=0`, and `gamescope … --` wrappers from every game's launch options. Dry run by default; `--apply` with Steam **fully exited** (backs up localconfig.vdf) |
 | `~/.local/bin/gaming-mode-diag` + `gaming-mode-diag.service` | Per-session snapshot (versions, gamescope cmdline, connector props, HDR metadata, kernel infoframes, screenshots) → `~/.local/state/gaming-mode-diag/`. `gaming-mode-diag mark bad "note"` |
 | `~/.local/bin/gaming-mode-cycle [rounds] [secs] [delays…]` | Automated in/out test loop for display bugs; rounds numbered in the diag index. See [display test toolkit](#display-test-toolkit) |
-| `~/.local/bin/gaming-mode-{test-form,extra-args,delay,hdmi-link}` + `~/.local/share/gaming-mode/test-form/` | Display test toolkit (phone form, per-start flags, start delay, HDMI link monitor) |
-| `--nvidia` only: wrapper, `nvidia.conf` + `start-delay.conf` drop-ins, `50-nvidia-tv-fix.lua` | NVIDIA fixes; also build `gamescope-gbm-git` ([NVIDIA section](#nvidia-corrupted--flickering-4k-tv-picture-in-gaming-mode-solved-gbm-scan-out)) |
+| `~/.local/bin/gaming-mode-{test-form,hdmi-link}` + `~/.local/share/gaming-mode/test-form/` | Display test toolkit, any GPU (phone form, HDMI link monitor; `gaming-mode-diag` detects the DRM driver — amdgpu, nvidia-drm, …) |
+| NVIDIA only (`gaming-mode/nvidia/`): wrapper, `nvidia.conf` + `start-delay.conf` drop-ins, `50-nvidia-tv-fix.lua`, `gaming-mode-{extra-args,delay}` | NVIDIA fixes; also build `gamescope-gbm-git` ([NVIDIA section](#nvidia-corrupted--flickering-4k-tv-picture-in-gaming-mode-solved-gbm-scan-out)) |
 | `~/.config/systemd/user/gamescope-session.service.d/easy-switch.conf` | Screen selection, `MANGOHUD=0`, stop hook |
 | `~/.config/systemd/user/easy-switch-hotkeys.service` | evdev hotkey listener, only in Gaming Mode (`PartOf=gamescope-session.target`) |
 | `~/.config/systemd/user/steam.service` | Desktop Steam autostart: `-silent -steamdeck`, `PartOf=graphical-session.target`, skipped when `%t/gamescope-environment` exists |
@@ -333,7 +339,7 @@ If the patch stops applying: `./refresh-patch.sh` (rebases branch `gbm-on-master
 
 ### Display test toolkit
 
-All installed by `./install.sh`; the wrapper flags need `--nvidia`. Every session is logged by
+Installed by `./install.sh`. `gaming-mode-extra-args`, `gaming-mode-delay` and the `gaming-mode-cycle` delay/args rotation are NVIDIA-only (they drive the NVIDIA wrapper and delay drop-in); on AMD `gaming-mode-cycle` refuses them. Every session is logged by
 `gaming-mode-diag` to `~/.local/state/gaming-mode-diag/` (index + per-session log).
 
 | Command | What |
@@ -424,7 +430,7 @@ Set up 2026-11-03. Values found:
 
 - gamescope's DRM backend, HDR, and VRR are developed on AMD first (Steam Deck); expect HDR + VRR
   to just work. VRR toggle: `…` → Performance in Gaming Mode.
-- Skip `--nvidia`. Don't copy NVIDIA env vars (`__GL_*`, `PROTON_NVIDIA_LIBS`, `PROTON_DLSS_UPGRADE`).
+- The installer auto-skips the NVIDIA extras (no `/proc/driver/nvidia`). Don't copy NVIDIA env vars (`__GL_*`, `PROTON_NVIDIA_LIBS`, `PROTON_DLSS_UPGRADE`).
 - Desktop HDR in games via native Wayland Proton is more viable on Mesa, but the Steam Input focus
   problem (table above) is the same — Gaming Mode is still the answer for controller + HDR.
 - Check the TV's HDMI port/Deep Colour setting if 4K HDR misbehaves; AMD over HDMI 2.1 FRL needs a

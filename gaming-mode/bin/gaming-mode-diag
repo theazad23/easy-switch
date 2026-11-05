@@ -20,8 +20,18 @@ start_iso=$(date '+%F %T')
 log="$dir/$(date +%Y%m%d-%H%M%S).log"
 connector=$(sed -n 's/^OUTPUT_CONNECTOR=\([^,]*\).*/\1/p' "${XDG_CONFIG_HOME:-$HOME/.config}/easy-switch/gamescope.env" 2>/dev/null)
 
+# DRM driver behind the Gaming Mode screen, for modetest -M (amdgpu, nvidia-drm, i915, ...)
+drm_module() {
+    local c card drv
+    c=$(ls -d /sys/class/drm/card*-"${connector:-}" 2>/dev/null | head -1)
+    card=${c%%-*}; [ -n "$c" ] || card=$(ls -d /sys/class/drm/card[0-9]* | grep -v -- - | head -1)
+    drv=$(basename "$(readlink -f "$card/device/driver")")
+    [ "$drv" = nvidia ] && drv=nvidia-drm
+    echo "$drv"
+}
+drm=$(drm_module)
 props() {   # connector properties as the driver currently has them
-    modetest -M nvidia-drm -c 2>/dev/null | awk -v c="$1" '$0 ~ c {f=1} f && /^[0-9]+\t/ && $0 !~ c {f=0} f' \
+    modetest -M "$drm" -c 2>/dev/null | awk -v c="$1" '$0 ~ c {f=1} f && /^[0-9]+\t/ && $0 !~ c {f=0} f' \
         | awk '/^\t[0-9]+ [^:]+:$/ {sub(/^\t[0-9]+ /,""); name=$0; next}
                /^\t\tvalue:/ && name ~ /Colorspace|HDR_OUTPUT_METADATA|dithering|vrr_capable|link-status|DPMS/ {
                    v=$0; sub(/^\t\tvalue:/,"",v); printf "  %s %s\n", name, (v==""?"(blob)":v); blob=(v==""); if(!blob) name=""; next}
@@ -32,7 +42,7 @@ snap() {   # snap <label> <tag>
     echo "=== snapshot +$(( $(date +%s) - start_epoch ))s ($1) ==="
     echo "-- connectors (enabled):"; for d in /sys/class/drm/card*-*; do printf '  %s %s %s\n' "${d##*/}" "$(cat "$d/status")" "$(cat "$d/enabled")"; done
     [ -n "$connector" ] && { echo "-- $connector properties:"; props "$connector"; }
-    echo "-- active CRTC modes:"; modetest -M nvidia-drm -p 2>/dev/null | awk '/^CRTCs:/{f=1} /^Planes:/{f=0} f' | grep -E "^[0-9]|#[0-9]" | head -6
+    echo "-- active CRTC modes:"; modetest -M "$drm" -p 2>/dev/null | awk '/^CRTCs:/{f=1} /^Planes:/{f=0} f' | grep -E "^[0-9]|#[0-9]" | head -6
     # What gamescope itself composited: torn here = gamescope rendering; clean here
     # while the TV is torn = scanout/driver side.
     shot="${log%.log}-$2.png"
@@ -43,11 +53,14 @@ snap() {   # snap <label> <tag>
     fi
     [ -s "$link" ] && echo "-- TV link (SCDC): $(tail -1 "$link")"
     echo "-- kernel HDMI infoframes / errors since start:"
-    journalctl -k --since "$start_iso" --no-pager -o short-precise 2>/dev/null | grep -iE "infoframe|nvidia|drm|segfault" | grep -v UFW | tail -15
+    journalctl -k --since "$start_iso" --no-pager -o short-precise 2>/dev/null | grep -iE "infoframe|nvidia|amdgpu|drm|segfault" | grep -v UFW | tail -15
 }
 
-delay=$("$(dirname "$(readlink -f "$0")")"/gaming-mode-delay 2>/dev/null || echo "?")
-xargs_=$("$(dirname "$(readlink -f "$0")")"/gaming-mode-extra-args 2>/dev/null || echo "?")
+# Start delay / extra gamescope args are NVIDIA-only extras (install.sh --nvidia); 0/none elsewhere
+here="$(dirname "$(readlink -f "$0")")"
+delay=0; xargs_=none
+[ -x "$here/gaming-mode-delay" ] && delay=$("$here/gaming-mode-delay" 2>/dev/null || echo "?")
+[ -x "$here/gaming-mode-extra-args" ] && xargs_=$("$here/gaming-mode-extra-args" 2>/dev/null || echo "?")
 echo "$(date -d "@$start_epoch" '+%F %T') session $(basename "$log") screen=${connector:-?} delay=${delay}s args=${xargs_// /,}" >> "$dir/index.log"
 # TV-side HDMI link health (SCDC) for the whole session, every 2 s -> <session>-link.log
 link="${log%.log}-link.log"
@@ -81,9 +94,11 @@ link_verdict() {   # summarise the link log so far: clean | BAD(<reasons>)
     echo "Gaming Mode session $(date)"
     echo "start delay: ${delay}s"
     echo "screen: ${connector:-?}  easy-switch mode: $(cat "${XDG_STATE_HOME:-$HOME/.local/state}/easy-switch/last-mode" 2>/dev/null)"
-    echo "gamescope: $(pacman -Q gamescope 2>/dev/null)   nvidia: $(grep -m1 -oE '[0-9]{3}\.[0-9]+\.[0-9]+' /proc/driver/nvidia/version)"
+    if [ -r /proc/driver/nvidia/version ]; then gpu="nvidia: $(grep -m1 -oE '[0-9]{3}\.[0-9]+\.[0-9]+' /proc/driver/nvidia/version)"
+    else gpu="$(pacman -Q mesa 2>/dev/null)"; fi
+    echo "gamescope: $(pacman -Q gamescope 2>/dev/null)   drm: $drm   $gpu"
     echo "kernel: $(uname -r)   steam channel: $(cat ~/.local/share/Steam/package/beta 2>/dev/null)"
-    gs=$(pgrep -o -f '^/[^ ]*/gamescope --force-composition' || pgrep -o -f '^/usr/bin/gamescope ')
+    gs=$(pgrep -o -f '^(/[^ ]*/)?gamescope ')   # NVIDIA wrapper: full path; AMD session: bare 'gamescope'
     echo "gamescope cmdline: $( [ -n "$gs" ] && tr '\0' ' ' < /proc/$gs/cmdline || echo '(not running)')"
     sleep 2; snap "gamescope up" 02s
     sleep 3; snap "steam starting" 05s

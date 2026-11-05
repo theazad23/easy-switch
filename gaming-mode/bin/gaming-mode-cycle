@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Repeatedly enter Gaming Mode so torn/clean starts can be watched and reported.
-#   gaming-mode-cycle [rounds=5] [seconds-per-round=25] [delays...]
+#   gaming-mode-cycle [rounds=5] [seconds-per-round=25] [delays...]   (delays: NVIDIA only)
 #   e.g. gaming-mode-cycle 12 25 0 4 8 15   # rotate start delays 0,4,8,15 s per round
 # With delays given, each round's start delay is set before it starts and the
 # previous delay is restored at the end (the diag index logs delay= per session).
@@ -29,6 +29,13 @@ wait_for() {  # wait_for up|down <timeout>
     return 1
 }
 
+# Start delays / extra gamescope args are NVIDIA-only tools (install.sh --nvidia)
+have() { [ -x "$here/$1" ]; }
+if { [ ${#delays[@]} -gt 0 ] && ! have gaming-mode-delay; } || { [ ${#argsets[@]} -gt 0 ] && ! have gaming-mode-extra-args; }; then
+    echo "gaming-mode-cycle: start delays / GAMING_MODE_CYCLE_ARGS need the NVIDIA extras (gaming-mode/install.sh --nvidia)" >&2
+    exit 1
+fi
+
 # Detach from the desktop session: it gets logged out on the first switch.
 if [ -z "$GAMING_MODE_CYCLE_DETACHED" ]; then
     exec systemd-run --user --collect --unit="gaming-mode-cycle-$(date +%H%M%S)" \
@@ -37,7 +44,9 @@ if [ -z "$GAMING_MODE_CYCLE_DETACHED" ]; then
         "$(readlink -f "$0")" "$rounds" "$hold" "$@"
 fi
 
-orig_delay=$("$here/gaming-mode-delay"); orig_args=$("$here/gaming-mode-extra-args")
+orig_delay=0; orig_args=none
+have gaming-mode-delay && orig_delay=$("$here/gaming-mode-delay")
+have gaming-mode-extra-args && orig_args=$("$here/gaming-mode-extra-args")
 echo "$(date '+%F %T') CYCLE start: $rounds rounds x ${hold}s, delays: ${delays[*]:-unchanged ($orig_delay)}, args: ${GAMING_MODE_CYCLE_ARGS:-unchanged ($orig_args)}" >> "$idx"
 set_delay 1
 active || steamos-session-select gamescope
