@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Switch to @MODE@
+Comment=easy-switch @MODE@ (@DESC@)
+Exec=@HOME@/.local/bin/easy-switch @MODE@
+Icon=@ICON@
+Terminal=false

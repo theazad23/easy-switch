@@ -73,7 +73,7 @@ Each mode is a `[modes.<name>]` table in `~/.config/easy-switch/config.toml`:
 | `description` | Free-text shown in `--list` and the success notification. |
 | `requires_any` | List of output names; at least one must be connected for the mode to apply. Omit to always apply. |
 | `strict` | If `true`, any currently-connected output **not** listed under `outputs` is disabled. Set by default by `easy-switch add`. Without it, a display plugged in after the snapshot was taken would stay on. |
-| `audio` | `pactl` sink name to switch to. |
+| `audio` | `pactl` sink name to switch to. For an ALSA sink that doesn't currently exist, the card is first switched to the profile that creates it (`alsa_output.<card>.hdmi-stereo-extra1` → `output:hdmi-stereo-extra1`, `…pro-output-N` → `pro-audio`). Prefer the standard profile sinks over `pro-output-N` on hosts with Gaming Mode: Steam switches the card to them. |
 | `audio_only_fallback` | If `true` and `requires_any` is unmet, still switch audio. |
 | `mangohud` | Profile file (relative to `~/.config/MangoHud/`, or absolute). On a successful display apply, `~/.config/MangoHud/MangoHud.conf` is symlinked to it, so the next game launch picks up that mode's FPS cap and the choice survives reboots. |
 | `gamescope_output` | Connector Gaming Mode (SteamOS-style gamescope session) should use for this mode, e.g. `HDMI-A-1`. Written to `~/.config/easy-switch/gamescope.env` for a `gamescope-session.service` drop-in (`EnvironmentFile=`). Running `easy-switch <mode>` *inside* Gaming Mode switches screen by restarting the session; `easy-switch --restore` at Plasma login then re-applies the mode's KDE layout. |

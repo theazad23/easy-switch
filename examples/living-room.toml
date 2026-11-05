@@ -4,6 +4,9 @@
 # audio_only_fallback=true means: if the required display isn't connected,
 # still switch the audio sink. Useful when you want headphones/speakers
 # active even with no monitor attached.
+#
+# Gaming Mode keys (gamescope_output, hotkey, mangohud, restart_hotkey):
+# see gaming-mode/examples/lisa-config.toml
 
 [modes.desk]
 description = "Desk monitor + Pebble Pro speakers"
@@ -15,6 +18,7 @@ audio_only_fallback = true
 [modes.desk.outputs.DP-1]
 enable = true
 primary = true
+mode = "2560x1440@144"
 
 [modes.desk.outputs.HDMI-A-1]
 enable = false
@@ -24,12 +28,13 @@ enable = false
 description = "TV + TV audio"
 requires_any = ["HDMI-A-1"]
 strict = true
-audio = "alsa_output.pci-0000_08_00.1.pro-output-7"
+audio = "alsa_output.pci-0000_08_00.1.hdmi-stereo-extra1"  # Navi HDMI 2 = Hisense TV (card profile output:hdmi-stereo-extra1, set automatically)
 audio_only_fallback = true
 
 [modes.tv.outputs.HDMI-A-1]
 enable = true
 primary = true
+mode = "3840x2160@60"
 
 [modes.tv.outputs.DP-1]
 enable = false

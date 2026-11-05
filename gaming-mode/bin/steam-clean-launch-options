@@ -4,6 +4,8 @@ Strip per-game launch-option boilerplate that's now handled globally:
   - `game-performance`            -> steam-game-performance.service does it for every game
   - `PROTON_ENABLE_WAYLAND=0`     -> already the default in ~/.config/environment.d/gaming.conf
   - `gamescope ... --` wrappers   -> Gaming Mode already runs games inside gamescope
+  - `mangohud` wrapper            -> MANGOHUD=1 is global; in Gaming Mode it doubles mangoapp
+  - `DRI_PRIME=1` (single-GPU host only), and the `%commands` typo -> `%command%`
 Leaves real per-game settings (e.g. -nolauncher, VKD3D_CONFIG=...) alone. A bare
 `%command%` is cleared. Dry run by default; --apply writes (Steam MUST be closed).
 """
@@ -12,10 +14,21 @@ import vdf
 
 APPLY = "--apply" in sys.argv
 
+# Single-GPU host: DRI_PRIME=1 selects a GPU that doesn't exist (harmless, useless)
+SINGLE_GPU = len([c for c in os.listdir("/sys/class/drm") if re.fullmatch(r"card\d+", c)]) <= 1
+
 def clean(lo: str) -> str:
-    s = re.sub(r"(^|\s)gamescope\s.*?\s--(?=\s)", r"\1", lo)   # gamescope <args> --
+    # `%commands` typo (seen on lisa): Steam doesn't recognise it, so the whole
+    # string was appended to the game's argv and the wrapper never ran
+    s = re.sub(r"%commands?(?!%)", "%command%", lo)
+    s = re.sub(r"(^|\s)gamescope\s.*?\s--(?=\s)", r"\1", s)    # gamescope <args> --
     s = re.sub(r"(^|\s)game-performance(?=\s|$)", r"\1", s)
     s = re.sub(r"(^|\s)PROTON_ENABLE_WAYLAND=0(?=\s|$)", r"\1", s)
+    # `mangohud` wrapper: MANGOHUD=1 is global on the desktop, and in Gaming Mode it
+    # would stack a second overlay on Steam's mangoapp (the session sets MANGOHUD=0)
+    s = re.sub(r"(^|\s)(mangohud|MANGOHUD=1)(?=\s|$)", r"\1", s)
+    if SINGLE_GPU:
+        s = re.sub(r"(^|\s)DRI_PRIME=\S+(?=\s|$)", r"\1", s)
     s = " ".join(s.split())
     return "" if s == "%command%" else s
 

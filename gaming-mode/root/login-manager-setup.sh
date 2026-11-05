@@ -69,11 +69,21 @@ EOS
     echo "--- $main:"; cat "$main"
     ;;
 sddm)
-    # SDDM reads /etc/sddm.conf.d/*.conf in order; steam-set-session writes
-    # zz-steamos-autologin.conf (Session=) there itself, so no sync is needed.
+    # SDDM reads /usr/lib/sddm/sddm.conf.d, then /etc/sddm.conf.d/*.conf in order,
+    # then /etc/sddm.conf LAST. steam-set-session writes
+    # /etc/sddm.conf.d/zz-steamos-autologin.conf (Session=), so no sync is needed --
+    # but any [Autologin] User/Session/Relogin left in /etc/sddm.conf overrides
+    # conf.d and pins every relogin to that session (seen on lisa: Session=plasma).
+    # Comment those keys out (backup once as /etc/sddm.conf.pre-gaming-mode).
+    if [ -f /etc/sddm.conf ] && awk '/^\[/{g=$0} g=="[Autologin]" && /^(User|Session|Relogin)=/{f=1} END{exit !f}' /etc/sddm.conf; then
+        [ -e /etc/sddm.conf.pre-gaming-mode ] || cp -a /etc/sddm.conf /etc/sddm.conf.pre-gaming-mode
+        awk '/^\[/{g=$0} g=="[Autologin]" && /^(User|Session|Relogin)=/{$0="# moved to /etc/sddm.conf.d/50-autologin.conf (Gaming Mode): "$0} {print}' \
+            /etc/sddm.conf > /etc/sddm.conf.tmp && mv /etc/sddm.conf.tmp /etc/sddm.conf
+        echo "--- /etc/sddm.conf (autologin keys commented out):"; cat /etc/sddm.conf
+    fi
     mkdir -p /etc/sddm.conf.d
     printf '[Autologin]\nUser=%s\nRelogin=true\nSession=plasma.desktop\n' "$user" > /etc/sddm.conf.d/50-autologin.conf
-    echo "--- /etc/sddm.conf.d:"; cat /etc/sddm.conf.d/*.conf
+    echo "--- /etc/sddm.conf.d:"; for f in /etc/sddm.conf.d/*.conf; do echo "# $f"; cat "$f"; done
     ;;
 *)
     echo "unsupported display manager '$dm' (need plasmalogin or sddm)" >&2; exit 1 ;;
