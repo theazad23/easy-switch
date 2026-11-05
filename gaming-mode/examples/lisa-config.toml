@@ -1,0 +1,41 @@
+# easy-switch config for host lisa (RX 7900 XTX) — from examples/living-room.toml, 2026-11-03
+
+# Gaming Mode only: restart it on the same screen
+restart_hotkey = "ctrl+alt+r"
+
+[modes.desk]
+description = "Desk monitor + Pebble Pro speakers"
+requires_any = ["DP-1"]
+strict = true
+audio = "alsa_output.usb-Creative_Technology_Ltd_Creative_Pebble_Pro_MF1710-01.analog-stereo"
+audio_only_fallback = true
+mangohud = "desk.conf"
+gamescope_output = "DP-1"
+hotkey = "ctrl+alt+left"         # same as the KDE shortcut
+
+[modes.desk.outputs.DP-1]
+enable = true
+primary = true
+mode = "2560x1440@144"
+
+[modes.desk.outputs.HDMI-A-1]
+enable = false
+
+
+[modes.tv]
+description = "TV + TV audio"
+requires_any = ["HDMI-A-1"]
+strict = true
+audio = "alsa_output.pci-0000_08_00.1.hdmi-stereo-extra1"  # Navi HDMI 2 = Hisense TV (card profile output:hdmi-stereo-extra1, set automatically)
+audio_only_fallback = true
+mangohud = "tv.conf"
+gamescope_output = "HDMI-A-1"
+hotkey = "ctrl+alt+right"        # same as the KDE shortcut
+
+[modes.tv.outputs.HDMI-A-1]
+enable = true
+primary = true
+mode = "3840x2160@60"
+
+[modes.tv.outputs.DP-1]
+enable = false

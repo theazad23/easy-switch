@@ -36,9 +36,9 @@ you want HDR/couch play. Switching is a logout/login (automatic, ~10 s).
 |---|---|
 | Double-click **Return to Gaming Mode** (desktop icon) | Logs out, autologs into Gaming Mode on the screen easy-switch says is current |
 | Steam → Power → **Switch to Desktop** | Back to Plasma |
-| **Ctrl+Alt+Down / Ctrl+Alt+Up** (physical keyboard) | Switch screen. On the desktop: KDE shortcut → easy-switch. In Gaming Mode: easy-switch listener → restarts Gaming Mode on the other screen |
+| **Per-mode hotkeys** (physical keyboard; bonestorm Ctrl+Alt+Up/Down, lisa Ctrl+Alt+Left/Right) | Switch screen. On the desktop: KDE shortcut → easy-switch. In Gaming Mode: easy-switch listener → restarts Gaming Mode on the other screen |
 | **Ctrl+Alt+R** (physical keyboard, Gaming Mode) | Restart Gaming Mode on the same screen |
-| Library tiles *Switch to TV / Switch to Desk Monitor / Restart Gaming Mode* | Same as the hotkeys, from the controller (add them as Non-Steam games) |
+| Library tiles *Switch to &lt;mode&gt;* (one per mode) / *Restart Gaming Mode* | Same as the hotkeys, from the controller (add them as Non-Steam games) |
 | Reboot from Gaming Mode | Back into Gaming Mode. Reboot from Plasma → Plasma |
 | Gaming Mode crashes / fails to start | Relogs into **Plasma** (never a crash loop) |
 | Any Steam game running | `performance` power profile + sleep inhibited, no launch option needed |
@@ -93,11 +93,15 @@ Do these **in order**. Steps marked 🔒 need `sudo` (the user runs them).
 - easy-switch cloned and working on the desktop (`./install.sh`, modes in
   `~/.config/easy-switch/config.toml`, KDE shortcuts). See [README](README.md).
   lisa's starting point is [`examples/living-room.toml`](examples/living-room.toml) — verify output and sink names with `kscreen-doctor -o` and `pactl list short sinks`.
-- Shared env: `~/.config/environment.d/gaming.conf` (bonestorm's copy is in
-  [`gaming-mode/examples/environment.d-gaming.conf`](gaming-mode/examples/environment.d-gaming.conf)).
+  Mode names are per host (bonestorm `desk`/`couch`, lisa `desk`/`tv`); the installer
+  generates launchers from whatever modes `config.toml` has, so **set the config up first**.
+- Shared env: `~/.config/environment.d/gaming.conf`. Per-host copies:
+  [`bonestorm-environment.d-gaming.conf`](gaming-mode/examples/bonestorm-environment.d-gaming.conf) (NVIDIA),
+  [`lisa-environment.d-gaming.conf`](gaming-mode/examples/lisa-environment.d-gaming.conf) (AMD).
   **On AMD:** comment the NVIDIA block, enable the AMD block (`MESA_SHADER_CACHE_MAX_SIZE`,
-  `ENABLE_LAYER_MESA_ANTI_LAG`), and for RDNA3 (7900 XTX) consider `PROTON_FSR4_RDNA3_UPGRADE=1`.
-  Keep `PROTON_ENABLE_WAYLAND=0`.
+  `ENABLE_LAYER_MESA_ANTI_LAG`), and for RDNA3 (7900 XTX) `PROTON_FSR4_RDNA3_UPGRADE=1`
+  (lisa: on — FSR4 costs a few fps vs FSR3 at the same internal res but looks much better;
+  opt a game out with `PROTON_FSR4_RDNA3_UPGRADE=0 %command%`). Keep `PROTON_ENABLE_WAYLAND=0`.
 
 ### 1. 🔒 Packages
 
@@ -133,9 +137,10 @@ Installs (backs up any differing existing file as `*.pre-gaming-mode`):
 | `~/.config/systemd/user/steam.service` | Desktop Steam autostart: `-silent -steamdeck`, `PartOf=graphical-session.target`, skipped when `%t/gamescope-environment` exists |
 | `~/.local/share/applications/steam.desktop` | Copy of the system launcher with `-steamdeck` |
 | `~/Desktop/gaming-mode.desktop` (+ app menu copy) | "Return to Gaming Mode" |
-| `~/.local/share/applications/easy-switch-{couch,desk}.desktop`, `gaming-mode-restart.desktop` | For Steam → Add a Non-Steam Game (controller-usable tiles). **Edit `Exec=` mode names to match the host's modes** (lisa uses `tv`/`desk` in the example) |
+| `~/.local/share/applications/easy-switch-<mode>.desktop` ("Switch to <mode>"), `gaming-mode-restart.desktop` | For Steam → Add a Non-Steam Game (controller-usable tiles). One per mode in `config.toml`, generated from `applications/easy-switch-mode.desktop.in` (re-run the installer after adding/renaming modes) |
 | `~/.config/autostart/easy-switch-restore.desktop` | Plasma login: `easy-switch --restore; easy-switch --sync` |
-| `~/.config/MangoHud/{desk,couch}.conf` | Per-mode fps cap (only if missing; rename to match modes) |
+| `~/.config/autostart/steam*.desktop` → `*.pre-gaming-mode` | Disables a Plasma-autostarted Steam (would run next to `steam.service`, without `-steamdeck`) |
+| `~/.config/MangoHud/<mode>.conf` | Per-mode fps cap from `mangohud/<hostname>/` (only if missing). New host: copy a host dir, name files after the modes, set `fps_limit` for the screens |
 | `~/.config/inhibit-short-session-tracker` | Disables Gaming Mode's Steam auto-reset (see pitfalls) |
 | masks `cachyos-gamescope-autologin.service` | Stops every Plasma login from re-arming Gaming Mode |
 
@@ -148,7 +153,10 @@ sudo sh ~/Projects/easy-switch/gaming-mode/root/login-manager-setup.sh
 Sets autologin `User=`, `Relogin=true`. On **Plasma Login** it edits
 `/etc/plasmalogin.conf` directly and installs `plasmalogin-session-sync.path`
 (copies `Session=` from `conf.d/zz-steamos-autologin.conf` into the main file —
-Plasma Login ignores `conf.d`). On **SDDM** a `conf.d` file is enough.
+Plasma Login ignores `conf.d`). On **SDDM** (lisa) it writes `/etc/sddm.conf.d/50-autologin.conf`
+and comments out any `[Autologin]` `User`/`Session`/`Relogin` in `/etc/sddm.conf` (backup
+`/etc/sddm.conf.pre-gaming-mode`): SDDM reads `/etc/sddm.conf` **after** `conf.d`, so a leftover
+`Session=plasma` there overrides Steam's `zz-steamos-autologin.conf` and Gaming Mode never starts.
 Check with `systemctl show -p Id --value display-manager`.
 This means the PC boots and logs straight in without a password (same as a Steam Deck).
 
@@ -161,12 +169,14 @@ restart_hotkey = "ctrl+alt+r"      # top level, before any [modes.*]
 
 [modes.tv]
 # … existing keys …
-mangohud = "couch.conf"            # optional desktop fps profile
+mangohud = "tv.conf"               # optional desktop fps profile (~/.config/MangoHud/<mode>.conf)
 gamescope_output = "HDMI-A-1"      # DRM connector name (same as kscreen-doctor)
 hotkey = "ctrl+alt+down"           # match the KDE shortcut for this mode
 ```
 
-bonestorm's full config: [`gaming-mode/examples/bonestorm-config.toml`](gaming-mode/examples/bonestorm-config.toml).
+Full configs: [`bonestorm-config.toml`](gaming-mode/examples/bonestorm-config.toml),
+[`lisa-config.toml`](gaming-mode/examples/lisa-config.toml). `hotkey` must match the host's KDE
+shortcut for that mode — lisa already had Ctrl+Alt+Left (desk) / Ctrl+Alt+Right (tv), so it uses those.
 Then on the desktop run `easy-switch --sync` once (records current mode).
 
 ### 5. Steam settings (once)
@@ -183,7 +193,11 @@ Then on the desktop run `easy-switch --sync` once (records current mode).
 
 ### 6. Clean launch options (optional)
 
-Quit Steam fully, then `steam-clean-launch-options` (review) and `steam-clean-launch-options --apply`.
+Quit Steam fully (check `pgrep -x steam` is empty), then `steam-clean-launch-options` (review) and
+`steam-clean-launch-options --apply`. It handles every Steam account in `userdata/`, and strips
+`game-performance`, `PROTON_ENABLE_WAYLAND=0`, `gamescope … --`, `mangohud` (double overlay in
+Gaming Mode), `DRI_PRIME=…` on single-GPU hosts, and fixes the `%commands` typo. lisa: 26 games
+cleared, only `--skip-launcher`/`--no-launcher` kept.
 
 ### 7. Verify
 
@@ -235,6 +249,34 @@ Quit Steam fully, then `steam-clean-launch-options` (review) and `steam-clean-la
 10. **Python stdout to the journal is buffered** — set `PYTHONUNBUFFERED=1` in services you want logs from.
 11. **`gamescope-session.service` has `TimeoutStartSec=5`**; any `ExecStartPre` delay needs a higher timeout.
 
+## Pitfalls hit on lisa (SDDM, AMD)
+
+12. **`/etc/sddm.conf` beats `conf.d`.** lisa had `[Autologin] User=… Session=plasma` there from the
+    CachyOS installer. SDDM reads it last, so every relogin would go to Plasma. `login-manager-setup.sh`
+    now comments those keys out.
+13. **Plasma autostart Steam.** `~/.config/autostart/steam.desktop` (`steam-runtime -silent`, no
+    `-steamdeck`) = second Steam next to `steam.service` + channel tug-of-war. Installer moves it aside.
+14. **`%commands` typo in launch options** (7 games). Steam only substitutes `%command%`; otherwise the
+    whole string is appended to the game's argv, so `game-performance` silently never ran.
+15. **Agent sessions across the switch.** A Claude Code session in a Plasma terminal dies with the
+    logout; one run through `paseo-daemon.service` (systemd user service, the user manager outlives
+    the quick relogin) keeps going in Gaming Mode — that's how lisa was set up, so the agent can
+    check `gamescope-session` / diag logs live from the phone/browser.
+16. **Check Steam is closed with `pgrep -x steam`**, not by eye — it was quietly started mid-setup
+    and the installer rewrote `package/beta` under it (survived, but don't rely on that).
+17. **Steam changes the HDMI card profile.** The first Gaming Mode session switched the Navi card from
+    `pro-audio` to `output:hdmi-stereo-extra1`; after the next boot (TV off → that profile unavailable)
+    WirePlumber fell back to `hdmi-stereo` (the Dell). `pro-output-7` no longer existed, `easy-switch tv`
+    failed at `pactl` ("No such entity") and audio stayed on the desk speakers. Fix: use the standard
+    profile sinks Steam uses (`…hdmi-stereo-extra1`), and `set_audio()` now runs `pactl set-card-profile`
+    (derived from the sink name) when the sink is missing.
+18. **An agent started at boot (paseo-daemon) has no Wayland env** — `kscreen-doctor` aborts (SIGABRT).
+    Take `WAYLAND_DISPLAY`/`DISPLAY` from `systemctl --user show-environment`. KDE shortcuts are unaffected.
+19. **No notification daemon in Gaming Mode → hotkeys looked dead.** CachyOS's `steam-notif-daemon.service`
+    points at a missing `/usr/bin/steam_notif_daemon`, so `notify-send` blocked ~40 s on D-Bus activation,
+    and `restart_gaming_mode()` notified *before* queueing the session stop — Ctrl+Alt+Left/Right recorded
+    the new screen but never restarted. Fix: stop first, then notify; `notify()` has a 2 s timeout.
+
 ## NVIDIA-only: intermittent torn TV picture (unresolved on bonestorm)
 
 Symptom: some Gaming Mode starts on the 4K60 HDMI TV show torn/offset/discoloured blocks for the
@@ -258,6 +300,18 @@ Workaround: Ctrl+Alt+R / Restart tile. Candidate for an NVIDIA bug report with t
 `gaming-mode-diag` / `gaming-mode-cycle` if a display problem shows up.
 
 ## AMD notes for lisa (RX 7900 XTX)
+
+Set up 2026-11-03. Values found:
+
+| | lisa |
+|---|---|
+| Display manager | SDDM |
+| Desk | `DP-1` Dell S2716DG 2560x1440@144, no VRR on AMD (G-SYNC module), no HDR → MangoHud `desk.conf` 144 fps `early` |
+| TV | `HDMI-A-1` Hisense 3840x2160@60, HDR → `tv.conf` 60 fps `early` |
+| Audio | desk `…Creative_Pebble_Pro_MF1710-01.analog-stereo`, TV `alsa_output.pci-0000_08_00.1.hdmi-stereo-extra1` (HDMI 2 = `eld#0.1` HISENSE, TV speakers only → stereo; `hdmi-stereo` = Dell). Was `pro-output-7` — see pitfall 17 |
+| Hotkeys | Ctrl+Alt+Left desk, Ctrl+Alt+Right tv, Ctrl+Alt+R restart |
+| First run | 2026-11-03: Gaming Mode on HDMI-A-1 first try, HDR on (Steam → Display), no torn/flickering picture (the NVIDIA issue does not occur), Steam only verified files (no channel re-download). Deck UI shows its first-run setup once — normal, not a reset |
+| Open (2026-11-04) | Retest Ctrl+Alt+Left/Right in Gaming Mode after the notify fix (pitfall 19); remaining step 7 checks: Ctrl+Alt+R, Switch to Desktop, reboot from Gaming Mode, Non-Steam tiles, Dell display settings in Gaming Mode |
 
 - gamescope's DRM backend, HDR, and VRR are developed on AMD first (Steam Deck); expect HDR + VRR
   to just work. VRR toggle: `…` → Performance in Gaming Mode.

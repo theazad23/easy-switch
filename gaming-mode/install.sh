@@ -39,6 +39,23 @@ echo "== launchers"
 put "$GM/applications/gaming-mode.desktop" "$HOME/Desktop/gaming-mode.desktop" 755
 for f in "$GM"/applications/*.desktop; do put "$f" "$HOME/.local/share/applications/$(basename "$f")"; done
 put "$GM/autostart/easy-switch-restore.desktop" "$HOME/.config/autostart/easy-switch-restore.desktop"
+# One "Switch to <mode>" launcher per easy-switch mode (for Steam -> Add a Non-Steam Game)
+list="$("$HOME/.local/bin/easy-switch" --list 2>/dev/null || true)"
+[[ -n "$list" ]] || warn "no easy-switch modes (~/.config/easy-switch/config.toml): skipped mode launchers; re-run after configuring"
+while read -r m desc; do
+    [[ -n "$m" ]] || continue
+    case "$m" in tv|couch|living*) icon=video-television ;; *) icon=video-display ;; esac
+    desc="$(printf '%s' "$desc" | sed 's/[|&\\]/\\&/g')"
+    tmp="$(mktemp)"
+    sed -e "s|@MODE@|$m|g" -e "s|@ICON@|$icon|g" -e "s|@DESC@|$desc|g" "$GM/applications/easy-switch-mode.desktop.in" > "$tmp"
+    put "$tmp" "$HOME/.local/share/applications/easy-switch-$m.desktop"; rm -f "$tmp"
+done <<< "$list"
+# A Plasma autostart Steam ("Start with computer" / a copied launcher) would run
+# next to steam.service: two Steams, and without -steamdeck (channel tug-of-war).
+for f in "$HOME"/.config/autostart/steam*.desktop; do
+    [[ -e "$f" ]] && grep -qE '^Exec=.*steam' "$f" || continue
+    mv "$f" "$f.pre-gaming-mode"; say "disabled Plasma autostart $f (steam.service starts Steam now; backup *.pre-gaming-mode)"
+done
 # Desktop Steam must run as the Deck client too (-steamdeck), or it and Gaming
 # Mode fight over the client channel and re-download ~400 MB on every switch.
 if [[ -f /usr/share/applications/steam.desktop ]]; then
@@ -49,9 +66,15 @@ if [[ -f /usr/share/applications/steam.desktop ]]; then
 fi
 
 echo "== MangoHud profiles (only if missing)"
-for f in "$GM"/mangohud/*.conf; do
-    d="$HOME/.config/MangoHud/$(basename "$f")"; [[ -e "$d" ]] && say "kept $d" || put "$f" "$d"
-done
+# Per-host profiles in mangohud/<hostname>/<mode>.conf (fps caps depend on the screens)
+host="$(hostnamectl hostname 2>/dev/null || cat /etc/hostname)"
+if [[ -d "$GM/mangohud/$host" ]]; then
+    for f in "$GM/mangohud/$host"/*.conf; do
+        d="$HOME/.config/MangoHud/$(basename "$f")"; [[ -e "$d" ]] && say "kept $d" || put "$f" "$d"
+    done
+else
+    warn "no mangohud/$host/: copy another host's dir, name files after your modes, set fps_limit for your screens"
+fi
 
 echo "== Steam safety switches"
 mkdir -p "$HOME/.config"; touch "$HOME/.config/inhibit-short-session-tracker"
