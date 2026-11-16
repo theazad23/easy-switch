@@ -129,7 +129,7 @@ Full starter configs for two real setups: [examples/basement.toml](examples/base
 
 ## Gaming Mode
 
-easy-switch also drives a SteamOS-style Gaming Mode (gamescope session): per-mode screen selection, hotkeys inside Gaming Mode, and seamless desktop ↔ Gaming Mode switching. Setup, host files, and lessons learned: [GAMING-MODE.md](GAMING-MODE.md) and [gaming-mode/](gaming-mode/).
+easy-switch also drives a SteamOS-style Gaming Mode (gamescope session): per-mode screen selection, hotkeys inside Gaming Mode, and seamless desktop ↔ Gaming Mode switching. Setup, host files, and lessons learned: [GAMING-MODE.md](GAMING-MODE.md) and [gaming-mode/](gaming-mode/). Minecraft from Gaming Mode: [MINECRAFT.md](MINECRAFT.md).
 
 ## KDE keyboard shortcuts
 

@@ -9,6 +9,9 @@ set up from this file alone.
 Everything host-side lives in [`gaming-mode/`](gaming-mode/): templates
 (`@HOME@` is filled in by the installer), a user installer, and a root script.
 
+Minecraft (Prism Launcher → the Springfield server) from Gaming Mode, per-screen
+window sizing included: [MINECRAFT.md](MINECRAFT.md).
+
 ---
 
 ## Why Gaming Mode at all
