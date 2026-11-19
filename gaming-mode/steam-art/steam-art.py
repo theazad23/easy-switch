@@ -10,9 +10,16 @@ Library: /mnt/games/steam-art/<game>/ (NAS plex_media/games, see mount-nas-games
   logo.png                  -> grid/<appid>_logo.png
   icon.png / icon.ico       -> shortcuts.vdf "icon" (shortcuts only; Steam closed)
 
-  steam-art.py list
-  steam-art.py apply minecraft [--dry-run]
-  steam-art.py apply --all
+  steam-art.py list                         games in the library
+  steam-art.py shortcuts                    non-Steam shortcuts in this PC's accounts (exact names)
+  steam-art.py add <game> FILE|DIR... --shortcut NAME | --appid N [--force]
+        sorts downloaded SteamGridDB files by shape into the library folder:
+        2:3 -> cover, ~2.14:1 -> widecover, ~3.1:1 -> background, .ico/square -> icon,
+        other transparent -> logo; --cover/--widecover/--background/--logo/--icon FILE
+        override; jpg/webp are converted to PNG
+  steam-art.py apply <game>... | --all [--dry-run] [--restart-steam]
+        --restart-steam: when Steam runs as the user unit steam.service (lisa's
+        desktop) and no game is running, stop it, apply (icon too), start it again
 
 Grid files can be written while Steam runs (they show after a restart). The icon
 lives in shortcuts.vdf, which Steam rewrites while running, so it's only set with
@@ -28,6 +35,107 @@ LOCAL = os.path.expanduser("~/Pictures/steamgriddb")
 GRID = {"cover.png": "{}p.png", "widecover.png": "{}.png",
         "background.png": "{}_hero.png", "logo.png": "{}_logo.png"}
 PNG = b"\x89PNG\r\n\x1a\n"
+
+
+ROLES = ("cover", "widecover", "background", "logo", "icon")
+SHAPES = {"cover": 900 / 600, "widecover": 430 / 920, "background": 620 / 1920}  # h / w
+
+
+def identify(path):
+    """(width, height, has_alpha, frames) of an image, largest frame for an .ico."""
+    out = subprocess.run(["identify", "-format", "%w %h %A\n", path],
+                         capture_output=True, text=True)
+    if out.returncode:
+        raise SystemExit(f"{path}: not an image ImageMagick can read")
+    rows = [l.split() for l in out.stdout.splitlines() if l.strip()]
+    w, h, a = max(rows, key=lambda r: int(r[0]) * int(r[1]))[:3]
+    return int(w), int(h), a.lower() not in ("false", "undefined"), len(rows)
+
+
+def classify(path):
+    w, h, alpha, frames = identify(path)
+    if path.lower().endswith(".ico") or frames > 1 or w == h:
+        return "icon", (w, h)
+    for role, r in SHAPES.items():
+        if abs(h / w - r) / r < 0.06:
+            return role, (w, h)
+    if alpha:
+        return "logo", (w, h)
+    return None, (w, h)
+
+
+def add(game, paths, meta, picks, force):
+    gdir = os.path.join(LIB, game)
+    files = []
+    for p in paths:
+        p = os.path.expanduser(p)
+        if os.path.isdir(p):
+            files += sorted(os.path.join(p, f) for f in os.listdir(p) if not f.startswith("."))
+        else:
+            files.append(p)
+    chosen, problems = {}, []
+    for role, f in picks.items():
+        if f:
+            chosen[role] = os.path.expanduser(f)
+    for f in files:
+        if f in chosen.values():
+            continue
+        role, (w, h) = classify(f)
+        if role is None:
+            problems.append(f"{os.path.basename(f)} ({w}x{h}): shape not recognised - pass it with --cover/--widecover/--background/--logo/--icon")
+        elif role in chosen and picks.get(role):
+            print(f"  skipped    {os.path.basename(f)} ({w}x{h}): --{role} was given")
+        elif role in chosen:
+            problems.append(f"{os.path.basename(f)} ({w}x{h}) and {os.path.basename(chosen[role])} both look like the {role} - pick one with --{role}")
+        else:
+            chosen[role] = f
+    if problems:
+        sys.exit("\n".join(problems))
+    if not chosen:
+        sys.exit("no images given")
+    if os.path.exists(os.path.join(gdir, "game.json")) and not force:
+        old = json.load(open(os.path.join(gdir, "game.json")))
+        if old != meta:
+            sys.exit(f"{game} already exists with {old} - use --force to replace")
+    os.makedirs(gdir, exist_ok=True)
+    tool = shutil.which("magick") or shutil.which("convert")
+    for role, f in sorted(chosen.items()):
+        w, h, _, _ = identify(f)
+        if role == "icon":
+            if f.lower().endswith(".ico") or not is_png(f):
+                shutil.copy2(f, os.path.join(gdir, "icon.ico" if f.lower().endswith(".ico") else "icon-src" + os.path.splitext(f)[1]))
+                convert_ico(f, os.path.join(gdir, "icon.png"), False)
+            else:
+                shutil.copy2(f, os.path.join(gdir, "icon.png"))
+        else:
+            dst = os.path.join(gdir, role + ".png")
+            if is_png(f):
+                shutil.copy2(f, dst)
+            else:
+                subprocess.run([tool, f, dst], check=True)
+        print(f"  {role:<10} {w}x{h}  <- {os.path.basename(f)}")
+    with open(os.path.join(gdir, "game.json"), "w") as fh:
+        json.dump(meta, fh); fh.write("\n")
+    missing = [r for r in ROLES if r not in chosen and not (r == "icon" and "appid" in meta)]
+    print(f"== {game} saved to {gdir}  {meta}" + (f"  (no {', '.join(missing)})" if missing else ""))
+
+
+def shortcuts():
+    import vdf
+    for cfg in accounts():
+        f = os.path.join(cfg, "shortcuts.vdf")
+        if not os.path.exists(f):
+            continue
+        for v in vdf.binary_loads(open(f, "rb").read()).get("shortcuts", {}).values():
+            print(f"{cfg.split(os.sep)[-2]}\t{v.get('appid', 0) & 0xFFFFFFFF}\t{v.get('AppName')}\ticon={v.get('icon') or '-'}")
+
+
+def game_running():
+    return subprocess.run(["pgrep", "-f", "SteamLaunch AppId="], capture_output=True).returncode == 0
+
+
+def steam_unit_active():
+    return subprocess.run(["systemctl", "--user", "is-active", "--quiet", "steam.service"]).returncode == 0
 
 
 def steam_running():
@@ -156,7 +264,20 @@ def main():
     a.add_argument("game", nargs="*")
     a.add_argument("--all", action="store_true")
     a.add_argument("--dry-run", action="store_true")
+    a.add_argument("--restart-steam", action="store_true")
+    sub.add_parser("shortcuts")
+    d = sub.add_parser("add")
+    d.add_argument("game", help="library folder name, lower-case, e.g. minecraft")
+    d.add_argument("files", nargs="*")
+    k = d.add_mutually_exclusive_group(required=True)
+    k.add_argument("--shortcut", help="exact name of the non-Steam shortcut in Steam")
+    k.add_argument("--appid", type=int, help="Steam store AppID of a bought game")
+    for r in ROLES:
+        d.add_argument("--" + r, metavar="FILE")
+    d.add_argument("--force", action="store_true")
     args = ap.parse_args()
+    if args.cmd == "shortcuts":
+        return shortcuts()
     if not os.path.isdir(LIB):
         sys.exit(f"{LIB} not found - is the NAS mounted? (mount-nas-games.sh)")
     games = sorted(d for d in os.listdir(LIB) if os.path.exists(os.path.join(LIB, d, "game.json")))
@@ -164,11 +285,37 @@ def main():
         for g in games:
             print(g, json.load(open(os.path.join(LIB, g, "game.json"))))
         return
+    if args.cmd == "add":
+        meta = {"shortcut": args.shortcut} if args.shortcut else {"appid": args.appid}
+        return add(args.game, args.files, meta, {r: getattr(args, r) for r in ROLES}, args.force)
     todo = games if args.all else args.game
     if not todo:
         sys.exit("name a game or use --all")
-    for g in todo:
-        apply(g, args.dry_run)
+    unknown = [g for g in todo if g not in games]
+    if unknown:
+        sys.exit(f"not in the library: {', '.join(unknown)} (have: {', '.join(games)})")
+    restart = False
+    if args.restart_steam and steam_running() and not args.dry_run:
+        if game_running():
+            sys.exit("a game is running - not restarting Steam")
+        if not steam_unit_active():
+            sys.exit("Steam here isn't the steam.service user unit (Gaming Mode or a desktop launch) - quit Steam by hand, then run apply again")
+        subprocess.run(["systemctl", "--user", "stop", "steam.service"], check=True)
+        for _ in range(30):
+            if not steam_running():
+                break
+            time.sleep(1)
+        else:
+            sys.exit("Steam didn't stop within 30 s")
+        restart = True
+        print("Steam stopped")
+    try:
+        for g in todo:
+            apply(g, args.dry_run)
+    finally:
+        if restart:
+            subprocess.run(["systemctl", "--user", "start", "steam.service"], check=True)
+            print("Steam started")
 
 
 if __name__ == "__main__":
