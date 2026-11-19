@@ -42,6 +42,28 @@ easy-switch --dry-run desk   # print the commands that would run, change nothing
 
 `EASY_SWITCH_CONFIG=/path/to/other.toml easy-switch desk` overrides the config path — handy for testing.
 
+## Checking and installing
+
+```sh
+easy-switch doctor             # is this PC set up right? read-only; exit 1 if anything failed
+easy-switch install --dry-run  # what the Gaming Mode installer would change
+easy-switch install            # do it (no root; safe to re-run)
+easy-switch status             # JSON: session, mode, screens on, game running, GPU
+easy-switch commands           # JSON: what other programs (Home Assistant) may ask this PC to do
+```
+
+`doctor` checks the modes against the PC's real connectors, sound devices and MangoHud profiles,
+the files in `~/.config/environment.d`, packages, every installed file against the repo, services,
+Steam's switches and the login manager. Each problem comes with the command that fixes it.
+
+`install` symlinks the Gaming Mode files into this checkout, so `git pull` updates them and the
+copies on the PC can't drift. The graphics driver decides what is installed: the NVIDIA-only
+gamescope workarounds go on where a screen runs on NVIDIA and are moved out of the way everywhere
+else (kept under `~/.local/state/easy-switch/removed/`). A different file already in the way is
+kept once as `<name>.pre-gaming-mode`.
+
+`doctor`, `install`, `status` and `commands` are reserved words: don't name a mode after them.
+
 ## Limitations
 
 **Detecting a powered-off TV is not possible** on at least NVIDIA + LG HDMI (and likely any setup without userspace CEC). With the HDMI cable still plugged in, every signal Linux exposes — kscreen `connected`, `/sys/class/drm/.../status`, `/sys/class/drm/.../dpms`, `/proc/asound/.../eld#*` — either lies (EDID is cached) or only flips when *signal is flowing*, not when the TV is on. The two states "TV in standby" and "TV on but not yet receiving signal" look identical to the OS. Without CEC we can't ask the TV "are you on?"

@@ -4,6 +4,10 @@
    0,
    "user sys network rfkill users video storage lp input audio wheel\n"
   ],
+  "id -u": [
+   0,
+   "1000\n"
+  ],
   "pacman -Q gamescope": [
    0,
    "gamescope 3.17.0-1\n"
@@ -40,6 +44,10 @@
    0,
    "52\talsa_output.usb-Creative_Technology_Ltd_Creative_Pebble_Pro_MF1710-01.analog-stereo\tPipeWire\ts16le 2ch 48000Hz\tSUSPENDED\n"
   ],
+  "pgrep -f reaper SteamLaunch AppId=": [
+   1,
+   ""
+  ],
   "systemctl --user is-enabled cachyos-gamescope-autologin.service": [
    1,
    "masked\n"
@@ -67,10 +75,15 @@
   "systemctl is-enabled sddm.service": [
    0,
    "enabled\n"
+  ],
+  "uname -n": [
+   0,
+   "lisa\n"
   ]
  },
  "exists": {
   "/etc/sddm.conf.d/zz-steamos-autologin.conf": true,
+  "/run/user/1000/gamescope-environment": false,
   "/usr/lib/steamos/steam-set-session": true,
   "~/.config/MangoHud/desk.conf": true,
   "~/.config/MangoHud/tv.conf": true,
@@ -107,6 +120,10 @@
   "/etc/sddm.conf": "[Autologin]\n# moved to /etc/sddm.conf.d/50-autologin.conf (Gaming Mode): User=user\n# moved to /etc/sddm.conf.d/50-autologin.conf (Gaming Mode): Session=plasma\n\n",
   "/etc/sddm.conf.d/50-autologin.conf": "[Autologin]\nUser=user\nRelogin=true\nSession=plasma.desktop\n",
   "/etc/sddm.conf.d/zz-steamos-autologin.conf": "[Autologin]\nSession=plasma.desktop\n",
+  "/sys/class/drm/card1-DP-1/enabled": "disabled\n",
+  "/sys/class/drm/card1-DP-2/enabled": "disabled\n",
+  "/sys/class/drm/card1-HDMI-A-1/enabled": "disabled\n",
+  "/sys/class/drm/card1-HDMI-A-2/enabled": "disabled\n",
   "~/.config/autostart/easy-switch-restore.desktop": "[Desktop Entry]\nType=Application\nName=Easy Switch restore\nComment=Re-apply the display mode chosen in Gaming Mode\nExec=sh -c '/home/user/.local/bin/easy-switch --restore; /home/user/.local/bin/easy-switch --sync'\nX-KDE-autostart-phase=2\nNoDisplay=true\n",
   "~/.config/easy-switch/config.toml": "# easy-switch config for host lisa (RX 7900 XTX) \u2014 from examples/living-room.toml, 2026-11-03\n\n# Gaming Mode only: restart it on the same screen\nrestart_hotkey = \"ctrl+alt+r\"\n\n[modes.desk]\ndescription = \"Desk monitor + Pebble Pro speakers\"\nrequires_any = [\"DP-1\"]\nstrict = true\naudio = \"alsa_output.usb-Creative_Technology_Ltd_Creative_Pebble_Pro_MF1710-01.analog-stereo\"\naudio_only_fallback = true\nmangohud = \"desk.conf\"\ngamescope_output = \"DP-1\"\nhotkey = \"ctrl+alt+left\"         # same as the KDE shortcut\n\n[modes.desk.outputs.DP-1]\nenable = true\nprimary = true\nmode = \"2560x1440@144\"\n\n[modes.desk.outputs.HDMI-A-1]\nenable = false\n\n\n[modes.tv]\ndescription = \"TV + TV audio\"\nrequires_any = [\"HDMI-A-1\"]\nstrict = true\naudio = \"alsa_output.pci-0000_08_00.1.hdmi-stereo-extra1\"  # Navi HDMI 2 = Hisense TV (card profile output:hdmi-stereo-extra1, set automatically)\naudio_only_fallback = true\nmangohud = \"tv.conf\"\ngamescope_output = \"HDMI-A-1\"\nhotkey = \"ctrl+alt+right\"        # same as the KDE shortcut\n\n[modes.tv.outputs.HDMI-A-1]\nenable = true\nprimary = true\nmode = \"3840x2160@60\"\n\n[modes.tv.outputs.DP-1]\nenable = false\n",
   "~/.config/environment.d/gaming.conf": "# === Vendor-agnostic always-on ===\n# FPS/CPU/GPU overlay for all Vulkan games\nMANGOHUD=1\n# FPS cap/limit method is per display mode, not set here: easy-switch points\n# ~/.config/MangoHud/MangoHud.conf at desk.conf or couch.conf (read at each\n# game launch, symlink persists across reboots)\n\n# === NVIDIA (not this machine: lisa is AMD) ===\n# Shader cache: 12GB + don't auto-evict\n# __GL_SHADER_DISK_CACHE_SIZE=12000000000\n# __GL_SHADER_DISK_CACHE_SKIP_CLEANUP=1\n\n# NVIDIA: auto-upgrade DLSS DLL (breaks a few games)\n# PROTON_DLSS_UPGRADE=1\n# NVIDIA: PhysX/CUDA (NOT needed for DLSS/RT)\n# PROTON_NVIDIA_LIBS=1\n# needs Gamescope --hdr-enabled OR ENABLE_HDR_WSI=1\nENABLE_HDR_WSI=1\nPROTON_ENABLE_HDR=1\n\n# === AMD (lisa, RX 7900 XTX) ===\nMESA_SHADER_CACHE_MAX_SIZE=12G\n# AMD Anti-Lag, reduced input latency\nENABLE_LAYER_MESA_ANTI_LAG=1\n\n# === Situational toggles -- uncomment per game/situation, not always-on ===\n# NVIDIA: on-screen DLSS status\n# PROTON_DLSS_INDICATOR=1\n# NVIDIA: fixes RTX 4000+ perf issues\n# PROTON_NVIDIA_LIBS_NO_32BIT=1\n# AMD: auto-upgrade FSR\n# PROTON_FSR4_UPGRADE=1\n# AMD: RDNA3-optimized FSR4\nPROTON_FSR4_RDNA3_UPGRADE=1\n# Intel/general: auto-upgrade XeSS\n# PROTON_XESS_UPGRADE=1\n# native Wayland (BREAKS Steam overlay; on Proton-CachyOS also auto-disables\n# Steam Input which breaks SC2026 back-button mappings -- leave off until either\n# Proton-CachyOS drops the auto-disable or Gamescope-wrapping every game).\nPROTON_ENABLE_WAYLAND=0\n# 64-bit WoW64 wineprefix (no 32-bit prefix). Part of the SteamOS3 +\n# native-Wayland Steam Input recipe; still experimental upstream, drop\n# per-game with PROTON_USE_WOW64=0 %command% if a title regresses.\nPROTON_USE_WOW64=1\n# use FSync, for games that misbehave under NTSync\n# PROTON_NO_NTSYNC=1\n# fix borderless fullscreen / click-through\nPROTON_NO_WM_DECORATION=1\n# per-game shader cache isolation\nPROTON_LOCAL_SHADER_CACHE=1\n# controller detection workaround\n# PROTON_PREFER_SDL=1\n# disable Steam Input (fixes Wayland gamepad issues)\n# PROTON_NO_STEAMINPUT=1\n",

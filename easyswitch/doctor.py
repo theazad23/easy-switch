@@ -188,7 +188,7 @@ class Doctor:
                 drift.append(it.dest)
             else:
                 good += 1
-        fix = "gaming-mode/install.sh"
+        fix = "easy-switch install"
         if missing:
             self.add("missing", FAIL, ", ".join(missing), fix)
         if drift:
@@ -239,18 +239,18 @@ class Doctor:
         if beta is not None and beta.strip() == "publicbeta":
             self.add("client channel", FAIL,
                      "desktop beta channel: desktop and Gaming Mode re-download the client on every switch",
-                     "gaming-mode/install.sh (sets steamdeck_publicbeta)")
+                     "easy-switch install (sets steamdeck_publicbeta)")
         else:
             self.add("client channel", OK, (beta or "stable").strip() or "stable")
         desk = self.sys.read("~/.local/share/applications/steam.desktop")
         if desk is None or "-steamdeck" not in desk:
-            self.add("desktop Steam launcher", FAIL, "does not start Steam with -steamdeck", "gaming-mode/install.sh")
+            self.add("desktop Steam launcher", FAIL, "does not start Steam with -steamdeck", "easy-switch install")
         else:
             self.add("desktop Steam launcher", OK, "-steamdeck")
         auto = [f for f in (self.sys.listdir("~/.config/autostart") or []) if re.fullmatch(r"steam.*\.desktop", f)]
         if auto:
             self.add("Plasma autostart", FAIL, f"{', '.join(auto)} would start a second Steam next to steam.service",
-                     "gaming-mode/install.sh")
+                     "easy-switch install")
         else:
             self.add("Plasma autostart", OK, "no second Steam")
 
@@ -371,6 +371,9 @@ def main(argv: list[str]) -> int:
     sys_ = Recorder() if args.record else System()
     results = Doctor(sys_).run()
     if args.record:
+        from . import status
+
+        status.status(sys_)  # so the recording answers status' questions too
         print(sys_.dump())
         return 0
     if args.json:

@@ -2,6 +2,9 @@
 it goes, and which machines get it. The installer and `doctor` both read this
 list, so what is installed and what is checked can't disagree.
 
+Files are symlinks into the repo unless they must carry the home path (see
+Item.how). systemd units use %h instead.
+
 `when`:
   always   every PC with Gaming Mode
   nvidia   only where a screen runs on NVIDIA's driver; anywhere else the file
@@ -24,6 +27,13 @@ class Item:
     src: Path
     dest: str  # "~/..." path on the PC
     when: str = "always"
+
+    @property
+    def how(self) -> str:
+        """link: a symlink into the repo, so `git pull` is the update and the
+        copy on the PC can't drift. render: desktop entries need the absolute
+        home path written in (@HOME@), so those are small generated copies."""
+        return "render" if self.src.suffix == ".desktop" else "link"
 
 
 def _dir(sub: str, dest_dir: str, when: str = "always", pattern: str = "*") -> list[Item]:
@@ -58,3 +68,14 @@ def rendered(item: Item, home: str) -> str:
 
 
 USER_UNITS = ["steam.service", "steam-game-performance.service", "easy-switch-hotkeys.service", "gaming-mode-diag.service"]
+
+MODE_LAUNCHER = GM / "applications/easy-switch-mode.desktop.in"
+
+
+def mode_launcher(mode: str, desc: str, home: str) -> tuple[str, str]:
+    """(dest, content) of the 'Switch to <mode>' entry for Steam's Add a Non-Steam Game."""
+    icon = "video-television" if mode in ("tv", "couch") or mode.startswith("living") else "video-display"
+    text = MODE_LAUNCHER.read_text()
+    for k, v in (("@MODE@", mode), ("@ICON@", icon), ("@DESC@", desc), ("@HOME@", home)):
+        text = text.replace(k, v)
+    return f"~/.local/share/applications/easy-switch-{mode}.desktop", text

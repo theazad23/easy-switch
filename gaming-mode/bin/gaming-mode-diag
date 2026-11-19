@@ -57,14 +57,14 @@ snap() {   # snap <label> <tag>
 }
 
 # Start delay / extra gamescope args are NVIDIA-only extras (install.sh --nvidia); 0/none elsewhere
-here="$(dirname "$(readlink -f "$0")")"
+here="$(dirname "$0")"   # ~/.local/bin: the NVIDIA tools are linked there next to this one
 delay=0; xargs_=none
 [ -x "$here/gaming-mode-delay" ] && delay=$("$here/gaming-mode-delay" 2>/dev/null || echo "?")
 [ -x "$here/gaming-mode-extra-args" ] && xargs_=$("$here/gaming-mode-extra-args" 2>/dev/null || echo "?")
 echo "$(date -d "@$start_epoch" '+%F %T') session $(basename "$log") screen=${connector:-?} delay=${delay}s args=${xargs_// /,}" >> "$dir/index.log"
 # TV-side HDMI link health (SCDC) for the whole session, every 2 s -> <session>-link.log
 link="${log%.log}-link.log"
-hdmi_link="$(dirname "$(readlink -f "$0")")/gaming-mode-hdmi-link"
+hdmi_link="$here/gaming-mode-hdmi-link"
 case "$connector" in HDMI-*) GAMING_MODE_HDMI_CONNECTOR="$connector" "$hdmi_link" watch 2 > "$link" 2>&1 & ;; esac
 link_verdict() {   # summarise the link log so far: clean | BAD(<reasons>)
     # The TV's error counters are not reliably cleared on read (LG keeps the count from link

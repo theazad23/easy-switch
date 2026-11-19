@@ -8,12 +8,20 @@ A small, portable CLI for switching KDE Plasma display + audio configurations fr
 
 ## Layout
 
-- [easy-switch](easy-switch) — the Python CLI (no extension; the symlink in `~/.local/bin` is what users invoke). Runs under Python 3.11+ (uses stdlib `tomllib`). No third-party deps.
+- [easy-switch](easy-switch) — launcher (no extension; the symlink in `~/.local/bin` is what users invoke) for the package [easyswitch/](easyswitch/). Python 3.11+ (stdlib `tomllib`), no third-party deps.
+  - `switch.py` — the mode switcher (everything under "How the CLI works" below).
+  - `cli.py` — dispatch: `doctor`, `install`, `status`, `commands`; anything else goes to the switcher.
+  - `system.py` — `System` is the only door to the machine for read-only code (files, links, commands). `Recorder` / `Replay` make and play back the recordings in `tests/fixtures/`. New read-only code takes a `System`, never `open()` / `subprocess`.
+  - `gpu.py` — vendor per screen connector from DRM sysfs. All NVIDIA / AMD differences hang off this; don't test for `/proc/driver/nvidia` anywhere else.
+  - `manifest.py` — the one list of installed files (`when = "nvidia"` for the NVIDIA-only ones). `install.py` and `doctor.py` both read it; a new installed file is one line there.
+  - `install.py` — `easy-switch install` (user half of Gaming Mode; symlinks, `--dry-run`). `gaming-mode/install.sh` is only a shim to it.
+  - `doctor.py` — `easy-switch doctor`. A new setup rule = a check here + a test.
+  - `status.py` — `status` / `commands` JSON, the contract for a Home Assistant integration. Must keep working over plain SSH (no desktop session).
+- [tests/](tests/) — `tests/run.sh`, no PC needed. `tests/capture.sh bonestorm lisa` re-records the two PCs (read-only there); the replay is strict, so a check that asks something new fails until re-recorded or answered in the test.
 - [install.sh](install.sh) — symlinks the script into `~/.local/bin` and seeds `~/.config/easy-switch/`. Idempotent; safe to re-run.
-- [GAMING-MODE.md](GAMING-MODE.md) + [gaming-mode/](gaming-mode/) — host-side Gaming Mode setup (templated user files with `@HOME@`, `install.sh`, root `login-manager-setup.sh`). Keep it vendor-neutral: anything that only makes sense on NVIDIA goes in `gaming-mode/nvidia/` (installed only when `install.sh` detects or is forced to NVIDIA); shared scripts must not assume a driver (`gaming-mode-diag` resolves the DRM module from sysfs). Both hosts run from the same tree: bonestorm NVIDIA, lisa AMD. When changing a host's live copy of one of these files, update the template too. Read GAMING-MODE.md's pitfalls before touching login/session logic.
+- [GAMING-MODE.md](GAMING-MODE.md) + [gaming-mode/](gaming-mode/) — host-side Gaming Mode setup (files linked onto the PC by `easy-switch install`; units use `%h`, only desktop entries carry `@HOME@`; root `login-manager-setup.sh`). Keep it vendor-neutral: anything that only makes sense on NVIDIA goes in `gaming-mode/nvidia/` (installed only where a screen runs on NVIDIA, removed elsewhere); shared scripts must not assume a driver (`gaming-mode-diag` resolves the DRM module from sysfs). Both hosts run from the same tree: bonestorm NVIDIA, lisa AMD. When changing a host's live copy of one of these files, update the template too. Read GAMING-MODE.md's pitfalls before touching login/session logic.
 - [MINECRAFT.md](MINECRAFT.md) + [gaming-mode/minecraft/](gaming-mode/minecraft/) — Minecraft (Prism `Main` instance) launched from Gaming Mode into the house server; `fullscreen-by-session.sh` is Prism's pre-launch command (live copy `~/minecraft/`, keep identical). Read its pitfalls before editing Steam VDFs.
 - [examples/](examples/) — starter `config.toml`s for the two real setups (`basement.toml`, `living-room.toml`). These are documentation, not loaded at runtime.
-- [basement/](basement/), [living-room/](living-room/) — **legacy** bash scripts the CLI replaces. Kept for reference until the user has migrated their KDE shortcuts. The example TOMLs reproduce their behavior exactly; if you change one, update the other or note the divergence.
 
 ## How the CLI works
 
@@ -86,8 +94,8 @@ See the README for the full table. Key invariants when editing the CLI or exampl
 
 ## Running and testing
 
-- No build, no tests, no linter. The script is exercised by running it.
-- `python3 ./easy-switch --help` and `EASY_SWITCH_CONFIG=examples/basement.toml python3 ./easy-switch --list` both work without any installation and are the quickest smoke checks.
+- `tests/run.sh` before every commit (about 0.2 s). Screen switching itself still needs the real hardware.
+- `./easy-switch --help` and `EASY_SWITCH_CONFIG=examples/basement.toml python3 ./easy-switch --list` both work without any installation and are the quickest smoke checks.
 - `EASY_SWITCH_CONFIG=examples/basement.toml ./easy-switch --dry-run desk` is safe to run on any host — it shells out to `kscreen-doctor -o` (read-only) and prints the commands it would run.
 - Real behavioral verification still requires the actual hardware; there is no way to fake `kscreen-doctor` apply.
 

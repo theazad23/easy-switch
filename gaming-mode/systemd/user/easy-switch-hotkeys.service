@@ -8,7 +8,7 @@ ConditionPathExists=%t/gamescope-environment
 [Service]
 EnvironmentFile=%t/gamescope-environment
 Environment=PYTHONUNBUFFERED=1
-ExecStart=@HOME@/.local/bin/easy-switch --watch-hotkeys
+ExecStart=%h/.local/bin/easy-switch --watch-hotkeys
 Restart=on-failure
 RestartSec=2
 

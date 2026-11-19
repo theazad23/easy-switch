@@ -10,7 +10,7 @@
 # (~/.local/state/gaming-mode-diag/index.log) so "3 bad" maps to a log.
 # After the last round it returns to the desktop.
 rounds=${1:-5}; hold=${2:-25}; shift 2 2>/dev/null || shift $#; delays=("$@")
-here="$(dirname "$(readlink -f "$0")")"
+here="$(dirname "$0")"   # ~/.local/bin: the NVIDIA tools are linked there next to this one
 IFS='|' read -r -a argsets <<< "${GAMING_MODE_CYCLE_ARGS:-}"
 set_delay() {  # set_delay <round>: pick this round's delay from the list
     [ ${#delays[@]} -gt 0 ] && "$here/gaming-mode-delay" "${delays[$(( ($1 - 1) % ${#delays[@]} ))]}" >/dev/null
