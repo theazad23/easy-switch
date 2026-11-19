@@ -51,6 +51,7 @@ The one host file is [`gaming-mode/minecraft/fullscreen-by-session.sh`](gaming-m
    Exe `"/usr/bin/prismlauncher"`, LaunchOptions `-l Main -s frinkahedron.lan:25565`.
    AppID = `crc32(Exe + AppName) | 0x80000000`, stored as a signed int32
    (bonestorm: 3212112756 / -1082854540). Back up every Steam file first.
+   Set `icon` here too, and add the library art (see "Library artwork" below).
 6. **Steam Input on**: in `userdata/<id>/config/localconfig.vdf`, under
    `UserLocalConfigStore/apps`, add `"<appid unsigned>" { "UseSteamControllerConfig" "2" }`.
 7. **Gamepad layout** for every controller family the house uses: in
@@ -66,6 +67,37 @@ The one host file is [`gaming-mode/minecraft/fullscreen-by-session.sh`](gaming-m
 8. **Test**: desktop launch (joins, shaders, controller), then Gaming Mode on
    each screen. The game log is `instances/Main/minecraft/logs/latest.log` (grep
    with `-a`, it contains binary bytes).
+
+## Library artwork (SteamGridDB)
+
+Art from SteamGridDB, kept per PC in `~/Pictures/steamgriddb/minecraft/`
+(bonestorm's copy is the original; lisa's was copied from it 2026-11-19).
+The images aren't in this repo. Steam reads them from
+`userdata/<steamid>/config/grid/`, named by the shortcut's unsigned AppID
+(3212112756 on every PC, since Exe + AppName are the same):
+
+- `cover.png` (600x900) → `<appid>p.png` (library capsule)
+- `widecover.png` (920x430) → `<appid>.png` (wide capsule / recent games)
+- `background.png` (1920x620) → `<appid>_hero.png`
+- `logo.png` → `<appid>_logo.png`
+- `icon.png` (256x256): not in `grid/`. It goes in the shortcut's `icon`
+  field in `shortcuts.vdf` (full path), so set it with Steam closed, like step 5.
+
+Do it for **every Steam account on the PC**: lisa has two (103883330 and
+1181233838), and each has its own `grid/` folder and its own `shortcuts.vdf`.
+Grid files can be copied while Steam runs; they show after a Steam restart.
+
+**SteamGridDB icons are `.ico`; Steam needs a real PNG.** Renaming
+`icon.ico` to `icon.png` isn't enough: `file icon.png` still says "MS Windows
+icon resource" and Steam shows nothing. Convert the largest frame instead
+(`identify icon.ico` lists them, the 256x256 one is usually `[5]`):
+```
+magick 'icon.ico[5]' icon.png
+```
+
+On lisa (Plasma desktop), Steam runs as the user unit `steam.service`:
+`systemctl --user stop steam.service`, edit, `systemctl --user start steam.service`.
+Backups from 2026-11-19: `shortcuts.vdf.bak-20261119` next to each file.
 
 ## Why windowed, and at what size
 
