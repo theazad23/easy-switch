@@ -70,9 +70,13 @@ The one host file is [`gaming-mode/minecraft/fullscreen-by-session.sh`](gaming-m
 
 ## Library artwork (SteamGridDB)
 
-Art from SteamGridDB, kept per PC in `~/Pictures/steamgriddb/minecraft/`
-(bonestorm's copy is the original; lisa's was copied from it 2026-11-19).
-The images aren't in this repo. Steam reads them from
+The art is kept once in the shared Steam art library on the NAS,
+`/mnt/games/steam-art/minecraft/` (`game.json` = `{"shortcut": "Minecraft"}`),
+and goes onto a PC with `gaming-mode/steam-art/steam-art.py apply minecraft`.
+See [gaming-mode/steam-art/README.md](gaming-mode/steam-art/README.md) for the
+mount and for adding other games. The images aren't in this repo. Before the
+library existed (2026-11-19) they were copied by hand from bonestorm's
+`~/Pictures/steamgriddb/minecraft/` to lisa. Steam reads them from
 `userdata/<steamid>/config/grid/`, named by the shortcut's unsigned AppID
 (3212112756 on every PC, since Exe + AppName are the same):
 
