@@ -1,3 +1,8 @@
+> **This project moved and grew: it is now [fettle](https://codeberg.org/tony-pizza/fettle).**
+> fettle does everything easy-switch did (`easy-switch <mode>` still works there as an alias) and
+> adds a setup doctor, an installer, settings, backups and a Home Assistant integration.
+> This repository is no longer updated.
+
 # Easy Switch
 
 KDE-only CLI for switching display + audio modes. Define modes in a TOML config; trigger them with `easy-switch <mode>` (bind that to a KDE Custom Shortcut).
