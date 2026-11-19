@@ -13,4 +13,8 @@ fi
 case "$(systemctl is-system-running 2>/dev/null)" in
     stopping) exit 0 ;;
 esac
+# Home Assistant's Shut down / Reboot button (ha-update poweroff|reboot) ends the
+# session itself ~15 s BEFORE it calls systemctl, so the system is still "running"
+# here - without this the PC came back up in the desktop (2026-11-12).
+systemctl is-active --quiet ha-power.service && exit 0
 exec /usr/bin/pkexec /usr/lib/steamos/steam-set-session plasma.desktop
