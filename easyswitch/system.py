@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -81,7 +82,13 @@ class Recorder(System):
 
     def read(self, p):
         v = super().read(p)
-        self.log["read"][self._scrub(p)] = self._scrub(v)
+        kept = self._scrub(v)
+        if kept and p.startswith(("/etc/", "/proc/mounts")):
+            # system files name the house network and disks: keep the shape only
+            kept = re.sub(r"\b(?:10|192\.168|172\.(?:1[6-9]|2\d|3[01]))(?:\.\d{1,3}){2,3}\b", "192.0.2.1", kept)
+            kept = re.sub(r"[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}", "00000000-0000-0000-0000-000000000000", kept)
+            kept = re.sub(r"UUID=[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}", "UUID=0000-0000", kept)
+        self.log["read"][self._scrub(p)] = kept
         return v
 
     def exists(self, p):

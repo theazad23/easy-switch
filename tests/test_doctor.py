@@ -184,6 +184,68 @@ class Environment(unittest.TestCase):
         self.assertEqual(status(res, "portals.conf"), FAIL)
 
 
+class FreshInstall(unittest.TestCase):
+    FSTAB = "/etc/fstab"
+
+    def test_games_drive_without_nofail(self):
+        d = healthy("bonestorm")
+        self.assertIn("nofail", d["read"][self.FSTAB])
+        d["read"][self.FSTAB] = d["read"][self.FSTAB].replace("nofail", "noatime")
+        _, res = run(d)
+        self.assertEqual(status(res, "drive /mnt/fast-storage"), FAIL)
+
+    def test_drive_in_fstab_but_not_mounted(self):
+        d = healthy("bonestorm")
+        d["read"]["/proc/mounts"] = "\n".join(
+            ln for ln in d["read"]["/proc/mounts"].splitlines() if " /mnt/fast-storage " not in ln
+        )
+        _, res = run(d)
+        self.assertEqual(status(res, "drive /mnt/fast-storage"), WARN)
+
+    def test_automounted_share_is_fine_unmounted(self):
+        d = healthy("lisa")
+        self.assertIn("x-systemd.automount", d["read"][self.FSTAB])
+        d["read"]["/proc/mounts"] = ""
+        _, res = run(d)
+        self.assertEqual(status(res, "drive /mnt/games"), OK)
+
+    def test_steam_prompt_not_authorized(self):
+        d = healthy("lisa")
+        d["read"]["~/.local/share/flatpak/db/kde-authorized"] = None
+        _, res = run(d)
+        self.assertEqual(status(res, "Steam remote-control prompt"), WARN)
+
+    def test_inline_comment_becomes_the_value(self):
+        d = healthy("lisa")
+        d["read"]["~/.config/environment.d/gaming.conf"] += "\nFOO=1   # note\n"
+        _, res = run(d)
+        r = next(r for r in res if r.name == "gaming.conf")
+        self.assertEqual(r.status, FAIL)
+        self.assertIn("FOO", r.detail)
+
+    def test_indented_variable_is_skipped_by_systemd(self):
+        d = healthy("lisa")
+        d["read"]["~/.config/environment.d/gaming.conf"] += "\n  BAR=1\n"
+        _, res = run(d)
+        self.assertIn("BAR", next(r for r in res if r.name == "gaming.conf").detail)
+
+    def test_recording_hides_the_house_network_and_disks(self):
+        for host, d in RAW.items():
+            sysfiles = d["read"][self.FSTAB] + d["read"]["/proc/mounts"]
+            self.assertNotRegex(sysfiles, r"192\.168\.", host)
+            self.assertNotRegex(sysfiles, r"UUID=(?!0000)[0-9a-f]{4}", host)
+
+
+class OldCopies(unittest.TestCase):
+    def test_unit_with_home_written_in_is_not_drift(self):
+        d = healthy("lisa")
+        unit = "~/.config/systemd/user/gaming-mode-diag.service"
+        d["read"][unit] = d["read"][unit].replace("%h", HOME)
+        self.assertIn(HOME, d["read"][unit])
+        _, res = run(d)
+        self.assertEqual(status(res, "files"), OK)
+
+
 class GamingMode(unittest.TestCase):
     def test_plasma_login_needs_session_sync(self):
         d = healthy("bonestorm")

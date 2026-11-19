@@ -184,7 +184,8 @@ class Doctor:
                 continue
             if have is None:
                 missing.append(it.dest)
-            elif have != manifest.rendered(it, self.sys.home):
+            elif have != manifest.rendered(it, self.sys.home) and have.replace(self.sys.home, "%h") != it.src.read_text():
+                # (a unit from the old copying installer has the home path where the repo says %h: same file)
                 drift.append(it.dest)
             else:
                 good += 1
@@ -304,6 +305,7 @@ class Doctor:
         for f in names:
             text = self.sys.read(f"{d}/{f}") or ""
             lines = [ln.strip() for ln in text.splitlines() if ln.strip() and not ln.strip().startswith("#")]
+            raw = [ln for ln in text.splitlines() if ln.strip() and not ln.strip().startswith("#")]
             bad = [ln for ln in lines if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", ln)]
             if bad:
                 self.add(f, FAIL, f"not an environment file (first odd line: {bad[0]!r}); systemd ignores it",
@@ -311,6 +313,13 @@ class Doctor:
                 continue
             env = dict(ln.split("=", 1) for ln in lines)
             problems = []
+            # environment.d has full-line comments only, and skips indented lines
+            inline = sorted(k for k, v in env.items() if re.search(r"\s#", v))
+            if inline:
+                problems.append(f"comment on the same line becomes part of the value: {', '.join(inline)}")
+            indented = sorted(ln.split("=", 1)[0].strip() for ln in raw if ln[0] in " \t")
+            if indented:
+                problems.append(f"indented lines are skipped by systemd: {', '.join(indented)}")
             if env.get("PROTON_ENABLE_WAYLAND") == "1":
                 problems.append("PROTON_ENABLE_WAYLAND=1 turns Steam Input off in Proton-CachyOS (double inputs on the Steam Controller)")
             for vendor, prefixes in VENDOR_VARS.items():
@@ -320,12 +329,55 @@ class Doctor:
                 if wrong:
                     problems.append(f"{vendor.upper()}-only settings with no {vendor.upper()} card: {', '.join(wrong)}")
             if problems:
-                self.add(f, FAIL if "WAYLAND" in problems[0] else WARN, "; ".join(problems), f"edit {d}/{f}, then log out and in")
+                hard = any(w in " ".join(problems) for w in ("WAYLAND", "same line", "indented"))
+                self.add(f, FAIL if hard else WARN, "; ".join(problems), f"edit {d}/{f}, then log out and in")
             else:
                 self.add(f, OK, f"{len(env)} variables")
 
+    def check_system(self) -> None:
+        """Fresh-install items (docs/FRESH-INSTALL.md)."""
+        self.group = "System"
+        # Extra drives: in fstab with nofail (a missing games drive must not stop the
+        # boot), and actually mounted. In fstab also ends Dolphin's password prompt.
+        mounted = {ln.split()[1] for ln in (self.sys.read("/proc/mounts") or "").splitlines() if len(ln.split()) > 1}
+        extra = []
+        for ln in (self.sys.read("/etc/fstab") or "").splitlines():
+            f = ln.split()
+            if len(f) >= 4 and not ln.lstrip().startswith("#") and f[1].startswith(("/mnt/", "/media/", "/data")):
+                extra.append((f[1], f[3].split(",")))
+        for mp, opts in extra:
+            lazy = "noauto" in opts or "x-systemd.automount" in opts
+            if "nofail" not in opts and not lazy:
+                self.add(f"drive {mp}", FAIL, "no 'nofail' in /etc/fstab: the PC won't boot normally when it is missing",
+                         "add nofail to its options in /etc/fstab")
+            elif mp in mounted or lazy:
+                self.add(f"drive {mp}", OK, "mounted" if mp in mounted else "mounts when used")
+            else:
+                self.add(f"drive {mp}", WARN, "in /etc/fstab but not mounted", f"sudo mount {mp}")
+        if not extra:
+            self.add("extra drives", SKIP, "none in /etc/fstab")
+        # Steam asks "Remote control requested" on every start on KDE Wayland until
+        # the portal permission is stored.
+        if self.pkg("steam") or self.sys.exists("~/.local/share/Steam"):
+            db = self.sys.read("~/.local/share/flatpak/db/kde-authorized") or ""
+            if "remote-desktop" in db:
+                self.add("Steam remote-control prompt", OK, "pre-authorized")
+            else:
+                self.add("Steam remote-control prompt", WARN, "Steam will ask for input access on every start",
+                         "see docs/FRESH-INSTALL.md -> Steam remote-control prompt (one gdbus call)")
+        for p in ("cachyos-gaming-meta", "cachyos-gaming-applications"):
+            rc, _ = self.sys.cmd("pacman", "-V")
+            if rc == 127:
+                break
+            v = self.pkg(p)
+            if v:
+                self.add(p, OK, v)
+            else:
+                self.add(p, WARN, "not installed (Proton-CachyOS, game-performance, MangoHud and friends)", f"sudo pacman -S {p}")
+
     def run(self) -> list[Result]:
         self.check_gpu()
+        self.check_system()
         self.check_config()
         self.check_environment()
         if self.gaming_mode_wanted():
